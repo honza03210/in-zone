@@ -24,9 +24,17 @@ android/local.properties
 
 # Firmware build artifacts (keep released .hex tracked deliberately)
 firmware/build/
+firmware/**/_build/
 firmware/**/Output/
 *.o
 *.d
+
+# Qorvo SDK: license-gated, never commit (vendor/README.md explains setup)
+firmware/vendor/*
+!firmware/vendor/README.md
+
+# SDK example file the user copies in locally (app_config.h stays tracked)
+firmware/ios-anchor/config/sdk_config.h
 
 # Misc
 *.log
