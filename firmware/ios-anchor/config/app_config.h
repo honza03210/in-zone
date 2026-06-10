@@ -15,6 +15,10 @@
 #define NRF_SDH_BLE_CENTRAL_LINK_COUNT    0
 #define NRF_SDH_BLE_GAP_DATA_LENGTH   251
 
+/* Use app_timer v1 (RTC1) — v2 uses nrf_atfifo inline asm broken on GCC 14 */
+#define APP_TIMER_CONFIG_RTC_FREQUENCY 0
+#define APP_TIMER_CONFIG_IRQ_PRIORITY  6
+
 /* Modules used beyond the ble_app_uart defaults */
 #define BLE_ADVERTISING_ENABLED 1
 #define NRF_CLOCK_ENABLED       1

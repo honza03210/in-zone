@@ -18,7 +18,7 @@ OUTPUT_DIRECTORY := _build
 
 SDK_ROOT    ?= $(error Set SDK_ROOT to your nRF5 SDK 17.1.0 path)
 UWB_BACKEND ?= stub
-QANI_ROOT   ?= ../vendor/qani
+QANI_ROOT   ?= $(SDK_ROOT)/../DW3_QM33_SDK_1.1.1/SDK/Firmware
 PROJ_DIR    := .
 
 SOFTDEVICE_HEX := $(SDK_ROOT)/components/softdevice/s113/hex/s113_nrf52_7.2.0_softdevice.hex
@@ -39,10 +39,14 @@ SRC_FILES += \
 
 ifeq ($(UWB_BACKEND),qani)
   SRC_FILES += $(PROJ_DIR)/src/uwb/uwb_port_qani.c
-  INC_FOLDERS += $(QANI_ROOT)/Libs/niq/include
-  LIB_FILES += $(QANI_ROOT)/Libs/niq/libniq-m4-hfp.a
-  # VERIFY(vendor/README.md): uwbstack + driver libs and their exact
-  # paths/names differ per QANI release; list them here.
+  # niq library (Apple NI accessory protocol)
+  INC_FOLDERS += $(QANI_ROOT)/Libs/niq/Inc
+  LIB_FILES += $(QANI_ROOT)/Libs/niq/libniq-m4-hfp-2.1.0.0.a
+  # uwbstack (FiRa MAC)
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/include/uwbstack_bundle
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/include/uwbstack_bundle/uwbmac
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/include/uwbstack_bundle/net
+  LIB_FILES += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/lib/arm-cortex-m4-hard_floating/uwbstack_bundle/libuwbstack_bundle_fira_arm-cortex-m4-hard_floating_rtos_R12.7.0-00405-gb33c5c42726c.a
   CFLAGS += -DUWB_BACKEND_QANI
 else
   SRC_FILES += $(PROJ_DIR)/src/uwb/uwb_port_stub.c
@@ -61,8 +65,7 @@ SRC_FILES += \
   $(SDK_ROOT)/components/softdevice/common/nrf_sdh.c \
   $(SDK_ROOT)/components/softdevice/common/nrf_sdh_ble.c \
   $(SDK_ROOT)/components/softdevice/common/nrf_sdh_soc.c \
-  $(SDK_ROOT)/components/libraries/timer/app_timer2.c \
-  $(SDK_ROOT)/components/libraries/timer/drv_rtc.c \
+  $(SDK_ROOT)/components/libraries/timer/app_timer.c \
   $(SDK_ROOT)/components/libraries/util/app_error.c \
   $(SDK_ROOT)/components/libraries/util/app_error_handler_gcc.c \
   $(SDK_ROOT)/components/libraries/util/app_error_weak.c \
@@ -103,6 +106,7 @@ INC_FOLDERS += \
   $(SDK_ROOT)/components/ble/common \
   $(SDK_ROOT)/components/ble/nrf_ble_gatt \
   $(SDK_ROOT)/components/libraries/atomic \
+  $(SDK_ROOT)/components/libraries/atomic_fifo \
   $(SDK_ROOT)/components/libraries/atomic_flags \
   $(SDK_ROOT)/components/libraries/balloc \
   $(SDK_ROOT)/components/libraries/delay \
@@ -113,6 +117,7 @@ INC_FOLDERS += \
   $(SDK_ROOT)/components/libraries/mutex \
   $(SDK_ROOT)/components/libraries/pwr_mgmt \
   $(SDK_ROOT)/components/libraries/ringbuf \
+  $(SDK_ROOT)/components/libraries/scheduler \
   $(SDK_ROOT)/components/libraries/sortlist \
   $(SDK_ROOT)/components/libraries/strerror \
   $(SDK_ROOT)/components/libraries/timer \
@@ -133,7 +138,7 @@ INC_FOLDERS += \
 # ---- flags ----
 OPT = -O3 -g3
 CFLAGS += $(OPT)
-CFLAGS += -DAPP_TIMER_V2 -DAPP_TIMER_V2_RTC1_ENABLED
+CFLAGS += -DAPP_TIMER_V1
 CFLAGS += -DBOARD_CUSTOM
 CFLAGS += -DCONFIG_GPIO_AS_PINRESET
 CFLAGS += -DFLOAT_ABI_HARD
@@ -142,14 +147,14 @@ CFLAGS += -DNRF_SD_BLE_API_VERSION=7
 CFLAGS += -DS113 -DSOFTDEVICE_PRESENT
 CFLAGS += -DUSE_APP_CONFIG
 CFLAGS += -mcpu=cortex-m4 -mthumb -mabi=aapcs
-CFLAGS += -Wall -Werror
+CFLAGS += -Wall -Werror -Wno-array-bounds -Wno-enum-int-mismatch -Wno-error=maybe-uninitialized
 CFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
 CFLAGS += -ffunction-sections -fdata-sections -fno-strict-aliasing
 CFLAGS += -fno-builtin -fshort-enums
 
 ASMFLAGS += -g3 -mcpu=cortex-m4 -mthumb -mabi=aapcs
 ASMFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
-ASMFLAGS += -DAPP_TIMER_V2 -DAPP_TIMER_V2_RTC1_ENABLED
+ASMFLAGS += -DAPP_TIMER_V1
 ASMFLAGS += -DBOARD_CUSTOM -DCONFIG_GPIO_AS_PINRESET -DFLOAT_ABI_HARD
 ASMFLAGS += -DNRF52833_XXAA -DNRF_SD_BLE_API_VERSION=7
 ASMFLAGS += -DS113 -DSOFTDEVICE_PRESENT -DUSE_APP_CONFIG

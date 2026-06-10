@@ -1,5 +1,6 @@
 #include "anchor_id.h"
 #include "nrf52.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 

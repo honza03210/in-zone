@@ -2,6 +2,7 @@
 #include "board_dwm3001cdk.h"
 #include "app_timer.h"
 #include "nrf_gpio.h"
+#include <stdbool.h>
 
 APP_TIMER_DEF(m_blink_timer);
 APP_TIMER_DEF(m_identify_timer);
