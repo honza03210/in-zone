@@ -41,6 +41,9 @@ static void uwb_evt_handler(uwb_port_evt_t evt)
         NRF_LOG_INFO("ni: uwb stopped");
         break;
 
+    case UWB_PORT_EVT_RANGE:
+        break;
+
     case UWB_PORT_EVT_ERROR:
         m_state = NI_STATE_IDLE;
         NRF_LOG_ERROR("ni: uwb error");

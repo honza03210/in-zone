@@ -53,3 +53,15 @@ int uwb_port_stop(void)
     }
     return 0;
 }
+
+bool uwb_port_poll(void)
+{
+    return false;
+}
+
+static uwb_port_range_t m_stub_range = { .valid = false };
+
+const uwb_port_range_t *uwb_port_last_range(void)
+{
+    return &m_stub_range;
+}

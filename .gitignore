@@ -29,7 +29,8 @@ firmware/**/Output/
 *.o
 *.d
 
-# Qorvo SDK: license-gated, never commit (vendor/README.md explains setup)
+# Vendor SDKs (nRF5, Qorvo QANI): large binaries, license-gated
+SDK/
 firmware/vendor/*
 !firmware/vendor/README.md
 

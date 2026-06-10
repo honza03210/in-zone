@@ -38,16 +38,156 @@ SRC_FILES += \
   $(PROJ_DIR)/src/ni/ni_protocol.c
 
 ifeq ($(UWB_BACKEND),qani)
-  SRC_FILES += $(PROJ_DIR)/src/uwb/uwb_port_qani.c
-  # niq library (Apple NI accessory protocol)
+  # ---- our application sources ----
+  SRC_FILES += \
+    $(PROJ_DIR)/src/uwb/uwb_port_qani.c \
+    $(PROJ_DIR)/src/uwb/qosal_shim.c
+
+  # ---- Qorvo fira init (fira_uwb_mcps_init) ----
+  SRC_FILES += $(QANI_ROOT)/Src/Apps/Src/fira/fira_dw3000.c
+
+  # ---- Qorvo qplatform (SPI, GPIO, IRQ for DW3110) ----
+  # qplatform_common_wrap.c includes qm33_qhal_common/src/qplatform.c to avoid
+  # basename collision with qm33_qhal_non_zephyr/src/qplatform.c (nRF5 SDK
+  # Makefile.common uses notdir for object names).
+  SRC_FILES += \
+    $(PROJ_DIR)/src/uwb/qplatform_common_wrap.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qplatform/qm33_qhal_non_zephyr/src/qplatform.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qplatform/qm33_qhal_common/src/qplatform_deca_impl.c
+
+  # ---- Qorvo qhal NRFX (GPIO, SPI, timer, RTC, flash, power) ----
+  # qpwr_qm33_wrap.c includes qhal/src/qm33/qpwr.c to avoid basename
+  # collision with qhal/src/qpwr.c.
+  SRC_FILES += \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/qpwr.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/qrtc.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx/qgpio.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx/qspi.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx/qtimer.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx/qrtc_share.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx/persistent_time.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx/qflash.c \
+    $(PROJ_DIR)/src/uwb/qpwr_qm33_wrap.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/qm33/qotp.c
+
+  # ---- DWT UWB driver (DecaWave transceiver) ----
+  SRC_FILES += \
+    $(QANI_ROOT)/Libs/dwt_uwb_driver/deca_interface.c \
+    $(QANI_ROOT)/Libs/dwt_uwb_driver/deca_compat.c \
+    $(QANI_ROOT)/Libs/dwt_uwb_driver/deca_rsl.c \
+    $(QANI_ROOT)/Libs/dwt_uwb_driver/dw3000/dw3000_device.c \
+    $(QANI_ROOT)/Libs/dwt_uwb_driver/lib/qmath/src/qmath.c
+
+  # ---- Board platform (DWM3001CDK calibration + helpers) ----
+  SRC_FILES += \
+    $(QANI_ROOT)/Src/Boards/Src/DWM3001CDK/platform_l1_config.c \
+    $(QANI_ROOT)/Src/Boards/Src/Common/helper_platform_l1_config.c
+
+  # ---- UWB utilities ----
+  SRC_FILES += \
+    $(QANI_ROOT)/Src/UWB/uwb_translate.c \
+    $(QANI_ROOT)/Src/UWB/uwb_utils.c \
+    $(PROJ_DIR)/src/uwb/mcps_crypto_stub.c
+
+  # ---- nRF5 SDK drivers needed by qhal NRFX ----
+  SRC_FILES += \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_spim.c \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_gpiote.c \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_timer.c \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_rtc.c \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_nvmc.c \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/prs/nrfx_prs.c
+
+  # ---- niq library (Apple NI accessory protocol) ----
   INC_FOLDERS += $(QANI_ROOT)/Libs/niq/Inc
   LIB_FILES += $(QANI_ROOT)/Libs/niq/libniq-m4-hfp-2.1.0.0.a
-  # uwbstack (FiRa MAC)
+
+  # ---- nrf_oberon (AES-CMAC, AES-CCM, AES-CBC for mcps_crypto) ----
+  INC_FOLDERS += $(SDK_ROOT)/external/nrf_oberon/include
+  LIB_FILES += $(SDK_ROOT)/external/nrf_oberon/lib/cortex-m4/hard-float/liboberon_3.0.8.a
+
+  # ---- uwbstack bundle (FiRa MAC, pre-compiled) ----
   INC_FOLDERS += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/include/uwbstack_bundle
   INC_FOLDERS += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/include/uwbstack_bundle/uwbmac
   INC_FOLDERS += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/include/uwbstack_bundle/net
   LIB_FILES += $(QANI_ROOT)/Libs/uwbstack_libs/delivery/fira/Release/lib/arm-cortex-m4-hard_floating/uwbstack_bundle/libuwbstack_bundle_fira_arm-cortex-m4-hard_floating_rtos_R12.7.0-00405-gb33c5c42726c.a
+
+  # ---- QOSAL headers (qerr.h, qthread.h, qlog.h, etc.) ----
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/include
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/include/dummy
+
+  # ---- qplatform headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qplatform/include
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qplatform/qm33_qhal_common/include
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qplatform/qm33_qhal_common/src
+
+  # ---- qhal headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/include
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/nrfx
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qhal/src/qm33
+
+  # ---- DWT driver headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Libs/dwt_uwb_driver
+  INC_FOLDERS += $(QANI_ROOT)/Libs/dwt_uwb_driver/lib/qmath/include
+
+  # ---- L1 config / config manager headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/config_manager/plugins/l1_config/include
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/config_manager/src
+
+  # ---- App/fira headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Src/Apps/Src/fira
+  INC_FOLDERS += $(QANI_ROOT)/Src/Apps/Src/fira/Inc
+
+  # ---- UWB utility headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Src/UWB/Inc
+
+  # ---- Board headers ----
+  INC_FOLDERS += $(QANI_ROOT)/Src/Boards/Src/Common
+  INC_FOLDERS += $(QANI_ROOT)/Src/Boards/Src/Common_OTP
+
+  # ---- DWM3001CDK hardware defines (SPI, GPIO, IRQ pins) ----
   CFLAGS += -DUWB_BACKEND_QANI
+  CFLAGS += -DQANI_BUILD
+  CFLAGS += -DCONFIG_DW3000=1
+  CFLAGS += -DCONFIG_QM33=1
+  CFLAGS += -DCONFIG_QPLATFORM_IMPL_NRF
+  CFLAGS += -DCONFIG_QHAL_MAX_GPIO_CALLBACKS=6
+  CFLAGS += -DCONFIG_CFG_MANAGER_VOLATILE_MODE
+  CFLAGS += -DCONFIG_L1_CONFIG_CUSTOM_DEFAULT_USE_DEDICATED_SECTION
+  CFLAGS += -DBOARD_DWM3001_A1
+  CFLAGS += -DUSE_NIQ
+  CFLAGS += -DCONFIG_UWB_SPI_INSTANCE=3
+  CFLAGS += -DCONFIG_UWB_SPI_FRAME_SIZE=8
+  CFLAGS += -DCONFIG_SPI_UWB_IRQ_PRIORITY=3
+  CFLAGS += -DCONFIG_SPI_UWB_SCK_GPIO_PORT=0
+  CFLAGS += -DCONFIG_SPI_UWB_SCK_GPIO_PIN=3
+  CFLAGS += -DCONFIG_SPI_UWB_MOSI_GPIO_PORT=0
+  CFLAGS += -DCONFIG_SPI_UWB_MOSI_GPIO_PIN=8
+  CFLAGS += -DCONFIG_SPI_UWB_MISO_GPIO_PORT=0
+  CFLAGS += -DCONFIG_SPI_UWB_MISO_GPIO_PIN=29
+  CFLAGS += -DCONFIG_SPI_UWB_CS_GPIO_PORT=1
+  CFLAGS += -DCONFIG_SPI_UWB_CS_GPIO_PIN=6
+  CFLAGS += -DCONFIG_DWT_WU_GPIO_PORT=1
+  CFLAGS += -DCONFIG_DWT_WU_GPIO_PIN=19
+  CFLAGS += -DCONFIG_DWT_IRQ_GPIO_PORT=1
+  CFLAGS += -DCONFIG_DWT_IRQ_GPIO_PIN=2
+  CFLAGS += -DCONFIG_DWT_RSTN_GPIO_PORT=0
+  CFLAGS += -DCONFIG_DWT_RSTN_GPIO_PIN=25
+  # nRF5 SDK peripheral driver enables (legacy names — apply_old_config.h
+  # maps these to NRFX_* defines; SPI0 enabled as dummy because the
+  # legacy layer only checks instances 0-2 for NRFX_SPIM_ENABLED).
+  CFLAGS += -DSPI_ENABLED=1
+  CFLAGS += -DSPI0_ENABLED=1 -DSPI0_USE_EASY_DMA=1
+  CFLAGS += -DSPI3_ENABLED=1 -DSPI3_USE_EASY_DMA=1
+  CFLAGS += -DNRFX_SPIM3_ENABLED=1
+  CFLAGS += -DNRFX_SPIM_MISO_PULL_CFG=1
+  CFLAGS += -DGPIOTE_ENABLED=1
+  CFLAGS += -DGPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS=1
+  CFLAGS += -DTIMER_ENABLED=1 -DTIMER1_ENABLED=1
+  CFLAGS += -DRTC_ENABLED=1 -DRTC2_ENABLED=1
+  CFLAGS += -DNRFX_NVMC_ENABLED=1
+  CFLAGS += -DNRFX_PRS_ENABLED=1
+  CFLAGS += -DNRFX_SYSTICK_ENABLED=1
 else
   SRC_FILES += $(PROJ_DIR)/src/uwb/uwb_port_stub.c
 endif
@@ -175,6 +315,7 @@ LIB_FILES += -lc -lnosys -lm
 default: nrf52833_xxaa
 
 TEMPLATE_PATH := $(SDK_ROOT)/components/toolchain/gcc
+PASS_LINKER_INPUT_VIA_FILE := 0
 include $(TEMPLATE_PATH)/Makefile.common
 $(foreach target, $(TARGETS), $(call define_target, $(target)))
 

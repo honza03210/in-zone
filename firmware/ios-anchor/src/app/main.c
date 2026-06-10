@@ -10,6 +10,7 @@
  */
 #include "ble_stack.h"
 #include "ni_protocol.h"
+#include "uwb_port.h"
 #include "anchor_id.h"
 #include "leds.h"
 #include "watchdog.h"
@@ -70,6 +71,7 @@ int main(void)
 
     for (;;) {
         watchdog_feed();
+        uwb_port_poll();
         update_leds();
         if (!NRF_LOG_PROCESS()) {
             nrf_pwr_mgmt_run();
