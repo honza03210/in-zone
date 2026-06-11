@@ -2,11 +2,20 @@ import SwiftUI
 
 struct AnchorsView: View {
     @EnvironmentObject var bleManager: BLEManager
+    @EnvironmentObject var simulator: SimulatorService
 
     var body: some View {
         NavigationStack {
             List {
-                if bleManager.bluetoothState != .poweredOn {
+                if simulator.isActive {
+                    Section {
+                        Label(
+                            "Simulator mode \u{2014} 4 virtual anchors pre-connected",
+                            systemImage: "play.desktopcomputer"
+                        )
+                        .foregroundStyle(.orange)
+                    }
+                } else if bleManager.bluetoothState != .poweredOn {
                     Section {
                         Label(
                             "Bluetooth is \(bleManager.bluetoothStateText)",
@@ -16,7 +25,7 @@ struct AnchorsView: View {
                     }
                 }
 
-                if sortedAnchors.isEmpty && !bleManager.isScanning {
+                if sortedAnchors.isEmpty && !bleManager.isScanning && !simulator.isActive {
                     Section {
                         Text("Tap Scan to discover nearby anchors.")
                             .foregroundStyle(.secondary)

@@ -24,3 +24,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.inzone.app
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+  InZoneTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - InZoneTests
+    dependencies:
+      - target: InZone

@@ -5,6 +5,7 @@ struct LiveView: View {
     @EnvironmentObject var scheduler: RangingScheduler
     @EnvironmentObject var zoneEngine: ZoneEngine
     @EnvironmentObject var zoneStore: ZoneStore
+    @EnvironmentObject var simulator: SimulatorService
 
     @State private var showDebug = false
 
@@ -13,6 +14,12 @@ struct LiveView: View {
             VStack(spacing: 0) {
                 zoneBanner
                     .animation(.easeInOut, value: zoneEngine.currentZone?.id)
+
+                if simulator.isActive || scheduler.isRunning {
+                    RoomCanvasView(compact: true)
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                }
 
                 ScrollView {
                     VStack(spacing: 16) {
@@ -77,7 +84,11 @@ struct LiveView: View {
             HStack {
                 if scheduler.isRunning {
                     Button(role: .destructive) {
-                        scheduler.stop()
+                        if simulator.isActive {
+                            simulator.stopRanging()
+                        } else {
+                            scheduler.stop()
+                        }
                         zoneEngine.isDetecting = false
                     } label: {
                         Label("Stop Ranging", systemImage: "stop.fill")
@@ -86,15 +97,19 @@ struct LiveView: View {
                     .buttonStyle(.borderedProminent)
                 } else {
                     Button {
-                        let ids = bleManager.connectedAnchorIds
-                        guard !ids.isEmpty else { return }
-                        scheduler.start(anchors: ids, bleManager: bleManager)
+                        if simulator.isActive {
+                            simulator.startRanging()
+                        } else {
+                            let ids = bleManager.connectedAnchorIds
+                            guard !ids.isEmpty else { return }
+                            scheduler.start(anchors: ids, bleManager: bleManager)
+                        }
                     } label: {
                         Label("Start Ranging", systemImage: "play.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(bleManager.connectedAnchorIds.isEmpty)
+                    .disabled(!simulator.isActive && bleManager.connectedAnchorIds.isEmpty)
                 }
             }
 
