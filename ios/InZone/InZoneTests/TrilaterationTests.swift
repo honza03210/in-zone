@@ -131,6 +131,50 @@ final class TrilaterationTests: XCTestCase {
         XCTAssertEqual(Float(pos!.y), 2.0, accuracy: 0.2)
     }
 
+    // MARK: - Variance weighting
+
+    func testHighVarianceMeasurementIsDownWeighted() {
+        // Phone at (1, 1); anchor 2's distance is corrupted by +2m but
+        // flagged with a huge variance — the estimate should stay near
+        // the truth because the other three anchors dominate.
+        let dists: [UInt8: Float] = [
+            0: sqrt(2),
+            1: sqrt(17),
+            2: 7.0,          // true distance is 5.0
+            3: sqrt(10),
+        ]
+        let variances: [UInt8: Float] = [0: 0.01, 1: 0.01, 2: 25.0, 3: 0.01]
+
+        let weighted = Trilateration.estimatePosition(
+            distances: dists, anchors: corners, variances: variances)
+        XCTAssertNotNil(weighted)
+        XCTAssertEqual(Float(weighted!.x), 1.0, accuracy: 0.1)
+        XCTAssertEqual(Float(weighted!.y), 1.0, accuracy: 0.1)
+
+        // Sanity check: without variances the corrupted reading pulls
+        // the estimate measurably further from the truth.
+        let unweighted = Trilateration.estimatePosition(
+            distances: dists, anchors: corners)
+        let weightedErr = hypot(Float(weighted!.x) - 1, Float(weighted!.y) - 1)
+        let unweightedErr = hypot(Float(unweighted!.x) - 1, Float(unweighted!.y) - 1)
+        XCTAssertLessThan(weightedErr, unweightedErr)
+    }
+
+    func testUniformVariancesMatchUnweighted() {
+        let dists: [UInt8: Float] = [
+            0: sqrt(2), 1: sqrt(17), 2: 5, 3: sqrt(10),
+        ]
+        let uniform: [UInt8: Float] = [0: 0.05, 1: 0.05, 2: 0.05, 3: 0.05]
+
+        let weighted = Trilateration.estimatePosition(
+            distances: dists, anchors: corners, variances: uniform)
+        let plain = Trilateration.estimatePosition(
+            distances: dists, anchors: corners)
+
+        XCTAssertEqual(Float(weighted!.x), Float(plain!.x), accuracy: 0.001)
+        XCTAssertEqual(Float(weighted!.y), Float(plain!.y), accuracy: 0.001)
+    }
+
     // MARK: - Collinear anchors
 
     func testCollinearAnchorsFallsBackToWeightedCentroid() {

@@ -2,14 +2,19 @@ import Foundation
 
 enum Trilateration {
 
+    /// Estimates a 2D position from anchor distances. Measurements with a
+    /// known variance are down-weighted proportionally; live readings
+    /// without one are treated as equally reliable.
     static func estimatePosition(
         distances: [UInt8: Float],
-        anchors: [AnchorPlacement]
+        anchors: [AnchorPlacement],
+        variances: [UInt8: Float] = [:]
     ) -> CGPoint? {
-        var m: [(x: Float, y: Float, d: Float)] = []
+        var m: [Measurement] = []
         for anchor in anchors {
             if let d = distances[anchor.id], d > 0 {
-                m.append((anchor.x, anchor.y, d))
+                m.append(Measurement(x: anchor.x, y: anchor.y, d: d,
+                                     v: max(variances[anchor.id] ?? 0, 0)))
             }
         }
         guard m.count >= 2 else { return nil }
@@ -22,20 +27,33 @@ enum Trilateration {
         anchors: [AnchorPlacement]
     ) -> CGPoint? {
         var distances: [UInt8: Float] = [:]
+        var variances: [UInt8: Float] = [:]
         for (key, stats) in fingerprint {
             if let id = UInt8(key) {
                 distances[id] = stats.mean
+                variances[id] = stats.variance
             }
         }
-        return estimatePosition(distances: distances, anchors: anchors)
+        return estimatePosition(distances: distances, anchors: anchors,
+                                variances: variances)
     }
 
     // MARK: - Internal
 
-    private static func weightedCentroid(_ m: [(x: Float, y: Float, d: Float)]) -> CGPoint {
+    private struct Measurement {
+        let x: Float
+        let y: Float
+        let d: Float
+        let v: Float
+    }
+
+    // ε keeps zero-variance weights finite
+    private static let varianceFloor: Float = 0.01
+
+    private static func weightedCentroid(_ m: [Measurement]) -> CGPoint {
         var wx: Float = 0, wy: Float = 0, wt: Float = 0
         for a in m {
-            let w: Float = 1.0 / max(a.d * a.d, 0.01)
+            let w: Float = 1.0 / ((a.v + varianceFloor) * max(a.d * a.d, 0.01))
             wx += a.x * w
             wy += a.y * w
             wt += w
@@ -43,23 +61,27 @@ enum Trilateration {
         return CGPoint(x: CGFloat(wx / wt), y: CGFloat(wy / wt))
     }
 
-    private static func leastSquares(_ m: [(x: Float, y: Float, d: Float)]) -> CGPoint? {
-        let ref = m[0]
+    private static func leastSquares(_ m: [Measurement]) -> CGPoint? {
+        // The most reliable measurement anchors the linearization
+        guard let refIdx = m.indices.min(by: { m[$0].v < m[$1].v }) else { return nil }
+        let ref = m[refIdx]
+
         var ata00: Float = 0, ata01: Float = 0, ata11: Float = 0
         var atb0: Float = 0, atb1: Float = 0
 
-        for i in 1..<m.count {
+        for i in m.indices where i != refIdx {
+            let w = 1.0 / (m[i].v + ref.v + varianceFloor)
             let a = 2 * (m[i].x - ref.x)
             let b = 2 * (m[i].y - ref.y)
             let c = ref.d * ref.d - m[i].d * m[i].d
                     + m[i].x * m[i].x - ref.x * ref.x
                     + m[i].y * m[i].y - ref.y * ref.y
 
-            ata00 += a * a
-            ata01 += a * b
-            ata11 += b * b
-            atb0 += a * c
-            atb1 += b * c
+            ata00 += w * a * a
+            ata01 += w * a * b
+            ata11 += w * b * b
+            atb0 += w * a * c
+            atb1 += w * b * c
         }
 
         let det = ata00 * ata11 - ata01 * ata01
