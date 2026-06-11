@@ -3,72 +3,88 @@ import XCTest
 
 final class BLEProtocolTests: XCTestCase {
 
-    // MARK: - Message ID constants
+    // MARK: - Encoding
 
-    func testPhoneToAnchorMessageIDs() {
-        XCTAssertEqual(BLE.msgInitialize, 0x0A)
-        XCTAssertEqual(BLE.msgConfigure,  0x0B)
-        XCTAssertEqual(BLE.msgStop,       0x0C)
+    func testEncodeInitialize() {
+        XCTAssertEqual(NIMessage.encodeInitialize(), Data([0x0A]))
     }
 
-    func testAnchorToPhoneMessageIDs() {
-        XCTAssertEqual(BLE.msgAccessoryConfig, 0x01)
-        XCTAssertEqual(BLE.msgUwbDidStart,     0x02)
-        XCTAssertEqual(BLE.msgUwbDidStop,      0x03)
+    func testEncodeConfigure() {
+        let config = Data([0xDE, 0xAD, 0xBE, 0xEF])
+        let msg = NIMessage.encodeConfigure(shareableConfig: config)
+        XCTAssertEqual(msg, Data([0x0B, 0xDE, 0xAD, 0xBE, 0xEF]))
     }
 
-    // MARK: - Message encoding
-
-    func testInitializeMessage() {
-        let msg = Data([BLE.msgInitialize])
-        XCTAssertEqual(msg.count, 1)
-        XCTAssertEqual(msg[0], 0x0A)
+    func testEncodeConfigureEmptyPayload() {
+        XCTAssertEqual(NIMessage.encodeConfigure(shareableConfig: Data()), Data([0x0B]))
     }
 
-    func testConfigureMessage() {
-        let shareableConfig = Data([0xDE, 0xAD, 0xBE, 0xEF])
-        var msg = Data([BLE.msgConfigure])
-        msg.append(shareableConfig)
-
-        XCTAssertEqual(msg.count, 5)
-        XCTAssertEqual(msg[0], 0x0B)
-        XCTAssertEqual(Data(msg.dropFirst()), shareableConfig)
+    func testEncodeStop() {
+        XCTAssertEqual(NIMessage.encodeStop(), Data([0x0C]))
     }
 
-    func testStopMessage() {
-        let msg = Data([BLE.msgStop])
-        XCTAssertEqual(msg.count, 1)
-        XCTAssertEqual(msg[0], 0x0C)
-    }
-
-    // MARK: - Message parsing
+    // MARK: - Parsing
 
     func testParseAccessoryConfig() {
-        let configPayload = Data(repeating: 0x42, count: 64)
-        var msg = Data([BLE.msgAccessoryConfig])
-        msg.append(configPayload)
+        let payload = Data(repeating: 0x42, count: 64)
+        let msg = NIMessage.parse(Data([0x01]) + payload)
+        XCTAssertEqual(msg, .accessoryConfig(payload))
+    }
 
-        let msgId = msg[0]
-        let payload = Data(msg.dropFirst())
-
-        XCTAssertEqual(msgId, 0x01)
-        XCTAssertEqual(payload.count, 64)
-        XCTAssertEqual(payload, configPayload)
+    func testParseAccessoryConfigEmptyPayload() {
+        XCTAssertEqual(NIMessage.parse(Data([0x01])), .accessoryConfig(Data()))
     }
 
     func testParseUwbDidStart() {
-        let msg = Data([BLE.msgUwbDidStart])
-        XCTAssertEqual(msg[0], 0x02)
-        XCTAssertEqual(msg.count, 1)
+        XCTAssertEqual(NIMessage.parse(Data([0x02])), .uwbDidStart)
     }
 
     func testParseUwbDidStop() {
-        let msg = Data([BLE.msgUwbDidStop])
-        XCTAssertEqual(msg[0], 0x03)
-        XCTAssertEqual(msg.count, 1)
+        XCTAssertEqual(NIMessage.parse(Data([0x03])), .uwbDidStop)
     }
 
-    // MARK: - UUID format
+    func testParseUnknownMessageId() {
+        XCTAssertEqual(NIMessage.parse(Data([0x7F, 0x01])), .unknown(msgId: 0x7F))
+    }
+
+    func testParseEmptyDataReturnsNil() {
+        XCTAssertNil(NIMessage.parse(Data()))
+    }
+
+    func testPhoneToAnchorIdsAreNotParsedAsAnchorMessages() {
+        // 0x0A/0x0B/0x0C are phone->anchor; if echoed back they must
+        // not match any anchor->phone case
+        for id: UInt8 in [0x0A, 0x0B, 0x0C] {
+            XCTAssertEqual(NIMessage.parse(Data([id])), .unknown(msgId: id))
+        }
+    }
+
+    // MARK: - Label decoding
+
+    func testDecodeLabelPlain() {
+        XCTAssertEqual(BLE.decodeLabel(Data("desk".utf8)), "desk")
+    }
+
+    func testDecodeLabelStripsErasedFlashPadding() {
+        // UICR reads as 0xFF when never written
+        let data = Data("door".utf8) + Data(repeating: 0xFF, count: 12)
+        XCTAssertEqual(BLE.decodeLabel(data), "door")
+    }
+
+    func testDecodeLabelStripsNullPadding() {
+        let data = Data("bed".utf8) + Data(repeating: 0x00, count: 13)
+        XCTAssertEqual(BLE.decodeLabel(data), "bed")
+    }
+
+    func testDecodeLabelAllErased() {
+        XCTAssertEqual(BLE.decodeLabel(Data(repeating: 0xFF, count: 16)), "")
+    }
+
+    func testDecodeLabelEmpty() {
+        XCTAssertEqual(BLE.decodeLabel(Data()), "")
+    }
+
+    // MARK: - Firmware contract (UUIDs and message IDs)
 
     func testServiceUUIDs() {
         XCTAssertEqual(BLE.transportService.uuidString, "49A70001-9A91-4B5C-8E3F-2D1C7A6B5E40")
@@ -88,17 +104,12 @@ final class BLEProtocolTests: XCTestCase {
         XCTAssertEqual(BLE.identifyChar.uuidString,  "49A70015-9A91-4B5C-8E3F-2D1C7A6B5E40")
     }
 
-    // MARK: - Identify payload
-
-    func testIdentifyPayloadDefaultDuration() {
-        let payload = Data([5])
-        XCTAssertEqual(payload.count, 1)
-        XCTAssertEqual(payload[0], 5)
-    }
-
-    func testIdentifyPayloadCustomDuration() {
-        let seconds: UInt8 = 10
-        let payload = Data([seconds])
-        XCTAssertEqual(payload[0], 10)
+    func testMessageIdConstants() {
+        XCTAssertEqual(BLE.msgInitialize, 0x0A)
+        XCTAssertEqual(BLE.msgConfigure,  0x0B)
+        XCTAssertEqual(BLE.msgStop,       0x0C)
+        XCTAssertEqual(BLE.msgAccessoryConfig, 0x01)
+        XCTAssertEqual(BLE.msgUwbDidStart,     0x02)
+        XCTAssertEqual(BLE.msgUwbDidStop,      0x03)
     }
 }

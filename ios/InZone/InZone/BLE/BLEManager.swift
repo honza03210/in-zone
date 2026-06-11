@@ -76,17 +76,15 @@ class BLEManager: NSObject, ObservableObject {
     }
 
     func sendInitialize(to anchorUUID: UUID) {
-        send(to: anchorUUID, data: Data([BLE.msgInitialize]))
+        send(to: anchorUUID, data: NIMessage.encodeInitialize())
     }
 
     func sendConfigure(to anchorUUID: UUID, shareableConfig: Data) {
-        var msg = Data([BLE.msgConfigure])
-        msg.append(shareableConfig)
-        send(to: anchorUUID, data: msg)
+        send(to: anchorUUID, data: NIMessage.encodeConfigure(shareableConfig: shareableConfig))
     }
 
     func sendStop(to anchorUUID: UUID) {
-        send(to: anchorUUID, data: Data([BLE.msgStop]))
+        send(to: anchorUUID, data: NIMessage.encodeStop())
     }
 
     func identify(_ anchorUUID: UUID, seconds: UInt8 = 5) {
@@ -202,8 +200,7 @@ extension BLEManager: CBPeripheralDelegate {
         case BLE.anchorIdChar:
             anchors[id]?.anchorId = data[0]
         case BLE.labelChar:
-            let cleaned = data.filter { $0 != 0xFF && $0 != 0x00 }
-            anchors[id]?.label = String(data: cleaned, encoding: .utf8) ?? ""
+            anchors[id]?.label = BLE.decodeLabel(data)
         case BLE.fwVersionChar:
             anchors[id]?.firmwareVersion = String(data: data, encoding: .utf8) ?? ""
         case BLE.modeChar:
@@ -215,25 +212,24 @@ extension BLEManager: CBPeripheralDelegate {
     }
 
     private func handleNIMessage(from anchorUUID: UUID, data: Data) {
-        guard let msgId = data.first else { return }
-        let payload = Data(data.dropFirst())
-
-        switch msgId {
-        case BLE.msgAccessoryConfig:
+        switch NIMessage.parse(data) {
+        case .accessoryConfig(let payload):
             log.info("Accessory config from \(anchorUUID) (\(payload.count) bytes)")
             onAccessoryConfig?(anchorUUID, payload)
-        case BLE.msgUwbDidStart:
+        case .uwbDidStart:
             log.info("UWB started on \(anchorUUID)")
             anchors[anchorUUID]?.state = .ranging
             onUwbDidStart?(anchorUUID)
-        case BLE.msgUwbDidStop:
+        case .uwbDidStop:
             log.info("UWB stopped on \(anchorUUID)")
             if anchors[anchorUUID]?.state == .ranging {
                 anchors[anchorUUID]?.state = .connected
             }
             onUwbDidStop?(anchorUUID)
-        default:
+        case .unknown(let msgId):
             log.warning("Unknown NI message 0x\(String(msgId, radix: 16))")
+        case nil:
+            break
         }
     }
 }
