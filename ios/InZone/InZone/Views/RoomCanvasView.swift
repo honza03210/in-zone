@@ -51,13 +51,14 @@ struct RoomCanvasView: View {
 
         let ctx = CanvasContext(roomW: roomW, roomH: roomH,
                                 scale: scale, ox: ox, oy: oy)
+        let phone = phonePosition.map { ctx.clamp($0) }
 
         ZStack {
             gridLines(ctx)
             roomBorder(ctx, size: size)
             zoneBlobs(ctx)
-            if isRanging { distanceLines(ctx) }
-            phoneDot(ctx)
+            if isRanging { distanceLines(ctx, phone: phone) }
+            phoneDot(ctx, phone: phone)
             anchorDots(ctx)
             if !compact { meterLabels(ctx) }
         }
@@ -178,8 +179,8 @@ struct RoomCanvasView: View {
     // MARK: - Distance lines
 
     @ViewBuilder
-    private func distanceLines(_ c: CanvasContext) -> some View {
-        if let phone = phonePosition {
+    private func distanceLines(_ c: CanvasContext, phone: CGPoint?) -> some View {
+        if let phone {
             let pp = c.viewPt(phone)
             ForEach(layout.anchors) { anchor in
                 let ap = c.viewPt(CGFloat(anchor.x), CGFloat(anchor.y))
@@ -195,9 +196,9 @@ struct RoomCanvasView: View {
     // MARK: - Phone
 
     @ViewBuilder
-    private func phoneDot(_ c: CanvasContext) -> some View {
-        if let phone = phonePosition {
-            let pt = c.viewPt(c.clamp(phone))
+    private func phoneDot(_ c: CanvasContext, phone: CGPoint?) -> some View {
+        if let phone {
+            let pt = c.viewPt(phone)
             let dotSize: CGFloat = compact ? 16 : 20
             Circle()
                 .fill(.blue)
