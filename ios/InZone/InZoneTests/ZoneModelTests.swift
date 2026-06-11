@@ -26,8 +26,9 @@ final class ZoneModelTests: XCTestCase {
         XCTAssertEqual(decoded.name, "desk")
         XCTAssertEqual(decoded.colorName, "purple")
         XCTAssertEqual(decoded.fingerprint.count, 4)
-        XCTAssertEqual(decoded.fingerprint["2"]?.mean, 3.67, accuracy: 0.001)
-        XCTAssertEqual(decoded.fingerprint["2"]?.sampleCount, 22)
+        let a2 = try XCTUnwrap(decoded.fingerprint["2"])
+        XCTAssertEqual(a2.mean, 3.67, accuracy: 0.001)
+        XCTAssertEqual(a2.sampleCount, 22)
     }
 
     func testMultipleZonesRoundTrip() throws {
