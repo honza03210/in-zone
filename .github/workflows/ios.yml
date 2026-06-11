@@ -49,13 +49,27 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # Pick whatever base iPhone simulator the runner's Xcode ships, so the
+      # destination doesn't break when GitHub bumps the image (the device list
+      # moves from iPhone 15 -> 16 -> 17 ...). The app supports iOS 16+, so any
+      # available runtime works.
+      - name: Select simulator
+        run: |
+          LINE=$(xcrun simctl list devices available | grep -E 'iPhone [0-9]+ \(' | head -1)
+          UDID=$(echo "$LINE" | grep -oE '[0-9A-Fa-f-]{36}')
+          if [ -z "$UDID" ]; then
+            echo "No iPhone simulator available"; exit 1
+          fi
+          echo "Using:$LINE"
+          echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+
       - name: Build and test
         run: |
           set -o pipefail
           xcodebuild test \
             -project InZone.xcodeproj \
             -scheme InZone \
-            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify
