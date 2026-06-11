@@ -27,7 +27,7 @@ class NISessionManager: NSObject {
                 accessoryData: accessoryConfigData,
                 bluetoothPeerIdentifier: anchorPeripheralId
             )
-            s.run(with: config)
+            s.run(config)
             log.info("NI session running for \(self.anchorPeripheralId)")
         } catch {
             log.error("NI config failed: \(error)")

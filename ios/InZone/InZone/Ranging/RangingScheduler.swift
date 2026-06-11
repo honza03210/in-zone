@@ -57,7 +57,7 @@ class RangingScheduler: ObservableObject {
         ble.onUwbDidStart = { [weak self] id in
             self?.handleUwbStarted(id)
         }
-        ble.onUwbDidStop = { [weak self] _ in }
+        ble.onUwbDidStop = { _ in }
         ble.onDisconnect = { [weak self] id in
             self?.handleDisconnect(id)
         }
