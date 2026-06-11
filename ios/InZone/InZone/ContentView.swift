@@ -5,6 +5,8 @@ struct ContentView: View {
     @EnvironmentObject var bleManager: BLEManager
     @EnvironmentObject var scheduler: RangingScheduler
     @EnvironmentObject var roomStore: RoomStore
+    @EnvironmentObject var zoneEngine: ZoneEngine
+    @EnvironmentObject var zoneStore: ZoneStore
 
     var body: some View {
         TabView {
@@ -29,6 +31,7 @@ struct ContentView: View {
                 }
         }
         .onAppear {
+            zoneEngine.bind(scheduler: scheduler, zoneStore: zoneStore)
             if SimulatorService.isSimulatorEnvironment && !simulator.isActive {
                 simulator.activate(bleManager: bleManager, scheduler: scheduler,
                                    roomStore: roomStore)

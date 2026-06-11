@@ -38,12 +38,6 @@ struct LiveView: View {
                     }
                 }
             }
-            .onChange(of: scheduler.currentDistances) { _ in
-                zoneEngine.update(
-                    distances: scheduler.currentDistances,
-                    zones: zoneStore.zones
-                )
-            }
         }
     }
 

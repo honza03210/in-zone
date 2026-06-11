@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import os
 
 class ZoneEngine: ObservableObject {
@@ -12,7 +13,19 @@ class ZoneEngine: ObservableObject {
 
     private var candidateZone: Zone?
     private var candidateEntryTime: Date?
+    private var distancesSubscription: AnyCancellable?
     private let log = Logger(subsystem: "com.inzone", category: "Zone")
+
+    /// Detection runs whenever the scheduler publishes new distances,
+    /// independent of which view is on screen.
+    func bind(scheduler: RangingScheduler, zoneStore: ZoneStore) {
+        guard distancesSubscription == nil else { return }
+        distancesSubscription = scheduler.$currentDistances
+            .sink { [weak self, weak zoneStore] distances in
+                guard let self, let zoneStore else { return }
+                self.update(distances: distances, zones: zoneStore.zones)
+            }
+    }
 
     func update(distances: [UInt8: Float], zones: [Zone]) {
         guard isDetecting, !zones.isEmpty, !distances.isEmpty else { return }
