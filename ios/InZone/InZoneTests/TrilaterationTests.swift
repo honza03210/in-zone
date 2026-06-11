@@ -118,7 +118,7 @@ final class TrilaterationTests: XCTestCase {
 
     func testToleratesSmallNoise() {
         // Phone at (2.5, 2.0) with ±0.05m noise
-        let true_d0 = sqrt(2.5*2.5 + 2.0*2.0)
+        let true_d0: Float = sqrt(2.5*2.5 + 2.0*2.0)
         let dists: [UInt8: Float] = [
             0: true_d0 + 0.05,
             1: true_d0 - 0.03,
