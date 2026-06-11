@@ -1,5 +1,7 @@
 # In-Zone iOS App
 
+[![iOS](https://github.com/honza03210/in-zone/actions/workflows/ios.yml/badge.svg)](https://github.com/honza03210/in-zone/actions/workflows/ios.yml)
+
 iPhone app for UWB zone detection with DWM3001CDK anchors.
 
 ## Prerequisites
@@ -55,3 +57,11 @@ InZone/
 ```
 
 See [docs/SPECIFICATION.md](../docs/SPECIFICATION.md) for the full system design.
+
+## Continuous Integration
+
+[`.github/workflows/ios.yml`](../.github/workflows/ios.yml) runs on every push to
+`main` and on pull requests touching `ios/**`. On a macOS runner it installs
+XcodeGen, regenerates the project, and runs the full unit-test suite on the iOS
+Simulator (`xcodebuild test`). The `.xcresult` bundle is uploaded as a build
+artifact. No code signing is required — tests run unsigned on the simulator.

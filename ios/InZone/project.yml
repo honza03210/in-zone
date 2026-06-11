@@ -31,3 +31,13 @@ targets:
       - InZoneTests
     dependencies:
       - target: InZone
+schemes:
+  InZone:
+    build:
+      targets:
+        InZone: all
+        InZoneTests: [test]
+    test:
+      gatherCoverageData: true
+      targets:
+        - InZoneTests
