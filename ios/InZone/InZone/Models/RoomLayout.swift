@@ -9,16 +9,24 @@ struct AnchorPlacement: Identifiable, Codable, Equatable {
 }
 
 struct RoomLayout: Codable, Equatable {
-    var width: Float = 5.0
-    var height: Float = 4.0
-    var anchors: [AnchorPlacement] = Self.defaultAnchors
+    var width: Float
+    var height: Float
+    var anchors: [AnchorPlacement]
 
-    static let defaultAnchors: [AnchorPlacement] = [
-        AnchorPlacement(id: 0, x: 0, y: 0, label: "door"),
-        AnchorPlacement(id: 1, x: 5, y: 0, label: "window"),
-        AnchorPlacement(id: 2, x: 5, y: 4, label: "desk"),
-        AnchorPlacement(id: 3, x: 0, y: 4, label: "bed"),
-    ]
+    init(width: Float = 5.0, height: Float = 4.0, anchors: [AnchorPlacement]? = nil) {
+        self.width = width
+        self.height = height
+        self.anchors = anchors ?? Self.cornerAnchors(width: width, height: height)
+    }
+
+    static func cornerAnchors(width: Float, height: Float) -> [AnchorPlacement] {
+        [
+            AnchorPlacement(id: 0, x: 0,     y: 0,      label: "door"),
+            AnchorPlacement(id: 1, x: width, y: 0,      label: "window"),
+            AnchorPlacement(id: 2, x: width, y: height, label: "desk"),
+            AnchorPlacement(id: 3, x: 0,     y: height, label: "bed"),
+        ]
+    }
 
     func anchor(for id: UInt8) -> AnchorPlacement? {
         anchors.first { $0.id == id }
