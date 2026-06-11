@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject var simulator: SimulatorService
     @EnvironmentObject var bleManager: BLEManager
     @EnvironmentObject var scheduler: RangingScheduler
+    @EnvironmentObject var roomStore: RoomStore
 
     var body: some View {
         TabView {
@@ -29,7 +30,8 @@ struct ContentView: View {
         }
         .onAppear {
             if SimulatorService.isSimulatorEnvironment && !simulator.isActive {
-                simulator.activate(bleManager: bleManager, scheduler: scheduler)
+                simulator.activate(bleManager: bleManager, scheduler: scheduler,
+                                   roomStore: roomStore)
             }
         }
     }
