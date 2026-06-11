@@ -3,7 +3,7 @@
 > Turn 4 UWB anchors into a room map. Define zones (bed, desk, window…) and trigger
 > actions on your phone when you enter them.
 
-- **Status:** Planning / pre-implementation
+- **Status:** Firmware builds (QANI + stub); not yet flashed/tested on hardware
 - **Last updated:** 2026-06-10
 - **Hardware on hand:** 4× Qorvo **DWM3001CDK** development kits
 - **Primary phone:** iPhone 15 (U2 UWB chip), iOS 18+
@@ -124,9 +124,12 @@ Apple-NI build. ([Jetpack UWB](https://developer.android.com/jetpack/androidx/re
 
 ## 5. Anchor firmware plan (`/firmware`)
 
-**Base:** Qorvo QANI/QNI 3.x package for DWM3001CDK (FreeRTOS).
-**Toolchain:** SEGGER Embedded Studio or `arm-none-eabi-gcc` + nRF SDK; flash via
-`nrfjprog` / J-Flash Lite over on-board J-Link.
+**Base:** Qorvo DW3_QM33_SDK_1.1.1 (contains niq library + uwbstack_bundle
+pre-compiled static library for FiRa MAC / uwbmac / fira_helper).
+**Toolchain:** `arm-none-eabi-gcc` 15.2.1 + GNU Make + nRF5 SDK 17.1.0 Makefile
+build system (SoftDevice S113 7.2.0); flash via `nrfjprog` / J-Flash Lite over
+on-board J-Link. The uwbstack_bundle is compiled against FreeRTOS/QOSAL but runs
+on bare metal via shim implementations in `qosal_shim.c`.
 
 ### Tasks
 1. **Bring-up:** Flash stock QANI `.hex`, verify ranging against Apple's
@@ -252,8 +255,11 @@ zones drawn on a room map.
 
 ## 11. Milestones
 
-- **M0 — Repo & docs** *(this commit)*: spec, structure, decisions.
-- **M1 — Anchor bring-up:** stock QANI firmware on all 4, range against Apple sample.
+- **M0 — Repo & docs** ✅: spec, structure, decisions.
+- **M1 — Anchor bring-up:** ⏳ QANI firmware compiles and links (175 KB .hex); full
+  FiRa session lifecycle ported (`uwb_port_qani.c`), real AES crypto via nrf_oberon,
+  bare-metal QOSAL shims. **Next:** flash to boards, verify BLE + DW3110 SPI + NI
+  ranging against Apple sample app.
 - **M2 — iOS single-anchor ranging:** distance + direction on screen.
 - **M3 — iOS round-robin 4 anchors:** stable distance vector at ~1.5–3 Hz.
 - **M4 — Zone engine (Strategy A):** capture + live detection with hysteresis.

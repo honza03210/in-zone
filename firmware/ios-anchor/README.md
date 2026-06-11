@@ -38,23 +38,30 @@ config/     app_config.h overrides on top of an SDK example sdk_config.h
 
 ## Build
 
-Prereqs: [nRF5 SDK 17.1.0](https://www.nordicsemi.com/Products/Development-software/nRF5-SDK),
-GNU Arm Embedded toolchain 10.3+, GNU make, `nrfjprog` (nRF Command Line Tools),
-J-Link drivers (the CDK has J-Link OB — just USB).
+Prereqs:
+- [nRF5 SDK 17.1.0](https://www.nordicsemi.com/Products/Development-software/nRF5-SDK)
+  → `SDK/nRF5_SDK_17.1.0_ddde560/`
+- [DW3_QM33_SDK_1.1.1](https://www.qorvo.com/) (registration-gated)
+  → `SDK/DW3_QM33_SDK_1.1.1/` (only needed for QANI build)
+- GNU Arm Embedded toolchain 15.2.1+, GNU Make, `nrfjprog` (nRF Command Line Tools),
+  J-Link drivers (the CDK has J-Link OB — just USB)
 
 One-time: copy `sdk_config.h` from
 `<SDK>/examples/ble_peripheral/ble_app_uart/pca10100/s113/config/` into
 `config/` (our `app_config.h` overrides what matters; `USE_APP_CONFIG` is
-already set in the Makefile). Set the toolchain path in
-`<SDK>/components/toolchain/gcc/Makefile.windows`.
+already set in the Makefile).
 
 ```sh
 # 1) Stub build — no Qorvo SDK needed; BLE + protocol testable end to end
-make SDK_ROOT=C:/nRF5_SDK_17.1.0_ddde560
+make SDK_ROOT=C:/Users/honza/in-zone/SDK/nRF5_SDK_17.1.0_ddde560
 
-# 2) Full UWB build — after vendor setup, see ../vendor/README.md
-make SDK_ROOT=C:/nRF5_SDK_17.1.0_ddde560 UWB_BACKEND=qani
+# 2) QANI build — full UWB ranging (175 KB .hex)
+make SDK_ROOT=C:/Users/honza/in-zone/SDK/nRF5_SDK_17.1.0_ddde560 UWB_BACKEND=qani
 ```
+
+The Makefile auto-derives the Qorvo SDK path from `SDK_ROOT` (sibling
+`DW3_QM33_SDK_1.1.1` directory). GNU_GCC_ROOT defaults to the system PATH;
+override if needed.
 
 ## Flash + provision each anchor (×4)
 
@@ -76,5 +83,7 @@ script's RAM ORIGIN, adjust [inzone_anchor_nrf52833.ld](inzone_anchor_nrf52833.l
 2. **Stub build:** flash ours; verify advertising (`InZone-Ax`), identify
    blink, and the message exchange against the In-Zone iOS app (the phone
    will report an invalid NI config — expected, see `uwb_port_stub.c`).
-3. **QANI build:** wire `uwb_port_qani.c` (see [vendor/README.md](../vendor/README.md)),
-   verify real distance/direction in the iOS app debug view.
+3. **QANI build:** ✅ compiles and links (175 KB). Full FiRa session lifecycle
+   in `uwb_port_qani.c`, real AES crypto via nrf_oberon, bare-metal QOSAL
+   shims. **Next:** flash to boards, verify BLE advertising + DW3110 SPI
+   probe + NI ranging against the iOS app.

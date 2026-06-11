@@ -18,7 +18,17 @@ firing actions via Shortcuts.
 
 ## Status
 
-Planning. See [§11 Milestones](docs/SPECIFICATION.md#11-milestones). Current target:
+**Firmware builds.** The QANI anchor firmware (nRF52833 + DW3110 + Apple NI) compiles
+and links at 175 KB with full UWB session lifecycle, real AES crypto (nrf_oberon),
+and bare-metal QOSAL shims.
+
+**iOS app ready.** SwiftUI app with BLE scanning, NI round-robin ranging (2-session
+cap), zone capture (Strategy A fingerprinting), and live zone detection. Build with
+xcodegen on a Mac — see [`ios/README.md`](ios/README.md).
+
+Next step: flash firmware to DWM3001CDK boards and test end-to-end ranging.
+
+See [§11 Milestones](docs/SPECIFICATION.md#11-milestones). Current target:
 **Phase 1** — foreground ranging to 4 anchors, on-screen debug, and live zone
 detection on iOS.
 
