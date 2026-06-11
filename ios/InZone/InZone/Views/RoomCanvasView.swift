@@ -161,10 +161,15 @@ struct RoomCanvasView: View {
                 )
                 .position(pt)
 
+            Circle()
+                .fill(color.opacity(isActive ? 0.9 : 0.6))
+                .frame(width: compact ? 4 : 6, height: compact ? 4 : 6)
+                .position(pt)
+
             Text(zone.name)
                 .font(.system(size: compact ? 9 : 12, weight: .semibold))
                 .foregroundStyle(color.opacity(isActive ? 1 : 0.7))
-                .position(pt)
+                .position(x: pt.x, y: pt.y - radius - (compact ? 7 : 10))
         } else {
             // Trilateration needs >= 2 anchors; show a range ring instead
             singleAnchorRing(zone, c)
@@ -203,12 +208,15 @@ struct RoomCanvasView: View {
         }
     }
 
+    /// The blob shows capture uncertainty (~2 sigma of the fingerprint
+    /// noise), not the detection range — matching happens in
+    /// anchor-distance space, so the zone has no true spatial extent.
     private func blobRadius(_ zone: Zone) -> CGFloat {
         guard !zone.fingerprint.isEmpty else { return 0.4 }
         let avgStd = zone.fingerprint.values
             .map { sqrt($0.variance) }
             .reduce(0, +) / Float(zone.fingerprint.count)
-        return CGFloat(max(0.3, min(1.2, 0.35 + avgStd * 0.5)))
+        return CGFloat(max(0.3, min(1.2, 2 * avgStd)))
     }
 
     // MARK: - Distance lines
