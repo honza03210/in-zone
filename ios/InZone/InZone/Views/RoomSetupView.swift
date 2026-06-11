@@ -50,6 +50,8 @@ struct RoomSetupView: View {
                 height = String(format: "%.1f", roomStore.layout.height)
                 anchors = roomStore.layout.anchors
             }
+            .onChange(of: width) { _ in clampAnchors() }
+            .onChange(of: height) { _ in clampAnchors() }
         }
     }
 
@@ -228,13 +230,27 @@ struct RoomSetupView: View {
     // MARK: - Actions
 
     private func save() {
+        // Dimensions may have shrunk after anchors were placed
+        let clamped = anchors.map { a in
+            var a = a
+            a.x = max(0, min(currentWidth, a.x))
+            a.y = max(0, min(currentHeight, a.y))
+            return a
+        }
         roomStore.layout = RoomLayout(
             width: currentWidth,
             height: currentHeight,
-            anchors: anchors
+            anchors: clamped
         )
         roomStore.save()
         dismiss()
+    }
+
+    private func clampAnchors() {
+        for idx in anchors.indices {
+            anchors[idx].x = max(0, min(currentWidth, anchors[idx].x))
+            anchors[idx].y = max(0, min(currentHeight, anchors[idx].y))
+        }
     }
 
     private func resetDefaults() {
