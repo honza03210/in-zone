@@ -165,6 +165,41 @@ struct RoomCanvasView: View {
                 .font(.system(size: compact ? 9 : 12, weight: .semibold))
                 .foregroundStyle(color.opacity(isActive ? 1 : 0.7))
                 .position(pt)
+        } else {
+            // Trilateration needs >= 2 anchors; show a range ring instead
+            singleAnchorRing(zone, c)
+        }
+    }
+
+    @ViewBuilder
+    private func singleAnchorRing(_ zone: Zone, _ c: CanvasContext) -> some View {
+        if let entry = zone.fingerprint.first,
+           zone.fingerprint.count == 1,
+           let anchorId = UInt8(entry.key),
+           let placement = layout.anchor(for: anchorId) {
+            let anchorRoom = CGPoint(x: CGFloat(placement.x), y: CGFloat(placement.y))
+            let radius = CGFloat(entry.value.mean) * c.scale
+            let isActive = zone.id == zoneEngine.currentZone?.id
+            let color = Zone.color(for: zone.colorName)
+
+            Circle()
+                .stroke(color.opacity(isActive ? 0.7 : 0.35),
+                        style: StrokeStyle(lineWidth: isActive ? 2 : 1, dash: [4, 3]))
+                .frame(width: radius * 2, height: radius * 2)
+                .position(c.viewPt(anchorRoom))
+
+            // Label sits on the ring, on the side facing the room center
+            let dx = c.roomW / 2 - anchorRoom.x
+            let dy = c.roomH / 2 - anchorRoom.y
+            let len = max(sqrt(dx * dx + dy * dy), 0.001)
+            let labelRoom = CGPoint(
+                x: anchorRoom.x + dx / len * CGFloat(entry.value.mean),
+                y: anchorRoom.y + dy / len * CGFloat(entry.value.mean)
+            )
+            Text(zone.name)
+                .font(.system(size: compact ? 9 : 12, weight: .semibold))
+                .foregroundStyle(color.opacity(isActive ? 1 : 0.7))
+                .position(c.viewPt(c.clamp(labelRoom)))
         }
     }
 
