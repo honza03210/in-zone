@@ -5,6 +5,7 @@ struct MapView: View {
     @EnvironmentObject var zoneEngine: ZoneEngine
     @EnvironmentObject var scheduler: RangingScheduler
     @EnvironmentObject var simulator: SimulatorService
+    @EnvironmentObject var roomStore: RoomStore
 
     @State private var showRoomSetup = false
 
@@ -13,6 +14,12 @@ struct MapView: View {
             VStack(spacing: 0) {
                 zoneBanner
                     .animation(.easeInOut, value: zoneEngine.currentZone?.id)
+
+                if !roomStore.hasSavedLayout && !simulator.isActive {
+                    roomSetupHint
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                }
 
                 RoomCanvasView()
                     .padding()
@@ -50,6 +57,28 @@ struct MapView: View {
                 RoomSetupView()
             }
         }
+    }
+
+    // MARK: - First-run hint
+
+    private var roomSetupHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Room layout not set up")
+                    .font(.caption.bold())
+                Text("Positions on this map assume the default 5\u{00D7}4 m room. Set your real dimensions and anchor spots first.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Set Up") { showRoomSetup = true }
+                .font(.caption.bold())
+                .buttonStyle(.bordered)
+        }
+        .padding(10)
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Zone banner

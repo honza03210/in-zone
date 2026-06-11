@@ -35,6 +35,8 @@ struct RoomLayout: Codable, Equatable {
 
 class RoomStore: ObservableObject {
     @Published var layout: RoomLayout
+    /// False until the user saves a layout — drives the first-run hint
+    @Published private(set) var hasSavedLayout: Bool
 
     private let fileURL: URL
     private let log = Logger(subsystem: "com.inzone", category: "RoomStore")
@@ -47,9 +49,11 @@ class RoomStore: ObservableObject {
            let data = try? Data(contentsOf: fileURL),
            let saved = try? JSONDecoder().decode(RoomLayout.self, from: data) {
             layout = saved
+            hasSavedLayout = true
             log.info("Loaded room layout: \(saved.width)×\(saved.height)m, \(saved.anchors.count) anchors")
         } else {
             layout = RoomLayout()
+            hasSavedLayout = false
         }
     }
 
@@ -57,6 +61,7 @@ class RoomStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(layout)
             try data.write(to: fileURL, options: .atomic)
+            hasSavedLayout = true
         } catch {
             log.error("Save failed: \(error)")
         }
