@@ -8,9 +8,15 @@ struct RoomSetupView: View {
     @State private var height: String = ""
     @State private var anchors: [AnchorPlacement] = []
     @State private var draggedAnchor: UInt8?
+    @FocusState private var dimensionFieldFocused: Bool
 
-    private var currentWidth: Float { max(1, Float(width) ?? 5) }
-    private var currentHeight: Float { max(1, Float(height) ?? 4) }
+    private var currentWidth: Float { max(1, Self.parseDimension(width) ?? 5) }
+    private var currentHeight: Float { max(1, Self.parseDimension(height) ?? 4) }
+
+    // Decimal pads produce "," as the separator in many locales
+    static func parseDimension(_ text: String) -> Float? {
+        Float(text.replacingOccurrences(of: ",", with: "."))
+    }
 
     var body: some View {
         NavigationStack {
@@ -37,6 +43,10 @@ struct RoomSetupView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { dimensionFieldFocused = false }
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -67,6 +77,7 @@ struct RoomSetupView: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 56)
+                    .focused($dimensionFieldFocused)
                 Text("m")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -79,6 +90,7 @@ struct RoomSetupView: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 56)
+                    .focused($dimensionFieldFocused)
                 Text("m")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
