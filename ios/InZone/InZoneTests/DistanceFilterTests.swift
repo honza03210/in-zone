@@ -26,6 +26,7 @@ final class DistanceFilterTests: XCTestCase {
     }
 
     func testEMASmoothing() {
+        filter.maxJump = 1000  // isolate the EMA math from the outlier gate
         _ = filter.update(1.0, at: time(0))
         let result = filter.update(2.0, at: time(0.1))
         // EMA: 0.3 * 2.0 + 0.7 * 1.0 = 1.3
@@ -33,6 +34,7 @@ final class DistanceFilterTests: XCTestCase {
     }
 
     func testConvergesToStableValue() {
+        filter.maxJump = 1000  // isolate the EMA math from the outlier gate
         _ = filter.update(1.0, at: time(0))
         var result: Float = 1.0
         for i in 1...50 {
@@ -91,6 +93,7 @@ final class DistanceFilterTests: XCTestCase {
 
     func testHighAlphaFollowsFast() {
         filter.alpha = 0.9
+        filter.maxJump = 1000  // isolate the EMA math from the outlier gate
         _ = filter.update(1.0, at: time(0))
         let result = filter.update(2.0, at: time(0.1))
         // EMA: 0.9 * 2.0 + 0.1 * 1.0 = 1.9
@@ -99,6 +102,7 @@ final class DistanceFilterTests: XCTestCase {
 
     func testLowAlphaFollowsSlow() {
         filter.alpha = 0.1
+        filter.maxJump = 1000  // isolate the EMA math from the outlier gate
         _ = filter.update(1.0, at: time(0))
         let result = filter.update(2.0, at: time(0.1))
         // EMA: 0.1 * 2.0 + 0.9 * 1.0 = 1.1
