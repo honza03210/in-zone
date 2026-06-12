@@ -25,7 +25,7 @@ jobs:
       run:
         working-directory: ios/InZone
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Homebrew installs the latest XcodeGen, which emits the newest project
       # format (objectVersion 77). Pin a matching newest-stable Xcode so
@@ -76,7 +76,7 @@ jobs:
 
       - name: Upload test results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: TestResults
           path: ios/InZone/TestResults.xcresult
