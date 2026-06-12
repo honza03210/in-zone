@@ -13,4 +13,6 @@ void ble_stack_init(ble_stack_conn_cb_t conn_cb);
 
 void ble_stack_advertising_start(void);
 
+bool ble_stack_is_connected(void);
+
 #endif

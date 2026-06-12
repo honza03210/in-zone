@@ -5,7 +5,7 @@
 UWB room zone detection: 4× Qorvo DWM3001CDK anchors + iPhone 15 (primary) + Android (secondary).
 Full spec: `docs/SPECIFICATION.md`.
 
-## Current state (2026-06-10)
+## Current state (2026-06-11)
 
 Firmware (`firmware/ios-anchor/`) builds and links for both backends:
 
@@ -15,6 +15,17 @@ Firmware (`firmware/ios-anchor/`) builds and links for both backends:
 
 The QANI build includes a complete FiRa session lifecycle port (uwb_port_qani.c)
 from Qorvo's reference firmware. Not yet tested on hardware.
+
+A bring-up console (src/app/cli.c) runs over the RTT log channel:
+`status` / `spi` (bit-banged DW3110 DEV_ID probe) / `uicr` / `led` / `reset`.
+
+iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
+tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone
+capture + fingerprint detection, 2D room map with trilateration, simulator
+mode (auto-active on iOS Simulator). CI on GitHub Actions
+(`.github/workflows/ios.yml`) builds and runs the 72-test suite on every
+push touching `ios/**` — green as of 2026-06-11.
+Repo: https://github.com/honza03210/in-zone
 
 ## Build
 
@@ -57,6 +68,7 @@ make SDK_ROOT=C:/Users/honza/in-zone/SDK/nRF5_SDK_17.1.0_ddde560 UWB_BACKEND=qan
 
 ## Next milestones
 
-- Flash firmware to DWM3001CDK boards, verify boot + BLE advertising + DW3110 SPI probe
-- Build the iOS app (NISession + CoreBluetooth)
+- Flash firmware to DWM3001CDK boards; use the RTT console (`status`, `spi`,
+  `uicr`) to verify boot + BLE advertising + DW3110 SPI probe
+- Compile the iOS app on a Mac, run on iPhone 15 (CI already verifies it builds)
 - End-to-end: iPhone ↔ anchor NI ranging

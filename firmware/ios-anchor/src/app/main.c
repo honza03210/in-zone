@@ -14,6 +14,7 @@
 #include "anchor_id.h"
 #include "leds.h"
 #include "watchdog.h"
+#include "cli.h"
 
 #include "app_timer.h"
 #include "nrf_pwr_mgmt.h"
@@ -68,10 +69,12 @@ int main(void)
     ble_stack_init(on_conn_change);
     ble_stack_advertising_start();
     leds_set_state(LEDS_STATE_ADVERTISING);
+    cli_init();
 
     for (;;) {
         watchdog_feed();
         uwb_port_poll();
+        cli_poll();
         update_leds();
         if (!NRF_LOG_PROCESS()) {
             nrf_pwr_mgmt_run();

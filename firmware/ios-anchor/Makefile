@@ -30,6 +30,7 @@ $(OUTPUT_DIRECTORY)/nrf52833_xxaa.out: \
 SRC_FILES += \
   $(PROJ_DIR)/src/app/main.c \
   $(PROJ_DIR)/src/app/anchor_id.c \
+  $(PROJ_DIR)/src/app/cli.c \
   $(PROJ_DIR)/src/app/watchdog.c \
   $(PROJ_DIR)/src/board/leds.c \
   $(PROJ_DIR)/src/ble/ble_stack.c \

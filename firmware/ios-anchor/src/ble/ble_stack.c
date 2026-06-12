@@ -33,6 +33,12 @@ BLE_ADVERTISING_DEF(m_advertising);
 
 static uint8_t m_uuid_type;
 static ble_stack_conn_cb_t m_conn_cb;
+static bool m_connected;
+
+bool ble_stack_is_connected(void)
+{
+    return m_connected;
+}
 
 static bool transport_tx(const uint8_t *data, uint16_t len)
 {
@@ -58,6 +64,7 @@ static void on_ble_evt(const ble_evt_t *p_ble_evt, void *p_context)
     switch (p_ble_evt->header.evt_id) {
     case BLE_GAP_EVT_CONNECTED:
         NRF_LOG_INFO("ble: connected");
+        m_connected = true;
         if (m_conn_cb) {
             m_conn_cb(true);
         }
@@ -66,6 +73,7 @@ static void on_ble_evt(const ble_evt_t *p_ble_evt, void *p_context)
     case BLE_GAP_EVT_DISCONNECTED:
         NRF_LOG_INFO("ble: disconnected (reason 0x%x)",
                      p_ble_evt->evt.gap_evt.params.disconnected.reason);
+        m_connected = false;
         ni_protocol_reset();
         if (m_conn_cb) {
             m_conn_cb(false);

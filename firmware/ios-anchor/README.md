@@ -29,7 +29,7 @@ Architecture and rationale: [docs/SPECIFICATION.md §5](../../docs/SPECIFICATION
 ## Layout
 
 ```
-src/app/    main, anchor identity (UICR), watchdog
+src/app/    main, anchor identity (UICR), watchdog, bring-up CLI (RTT)
 src/ble/    SoftDevice stack + advertising, transport & info GATT services
 src/ni/     Apple NI accessory protocol state machine (transport-agnostic)
 src/uwb/    uwb_port.h + stub backend + QANI backend (the only Qorvo-aware file)
@@ -76,13 +76,32 @@ Logs stream over RTT: `make rtt` or `JLinkRTTViewer`, target `NRF52833_XXAA`.
 First boot logs `SoftDevice RAM start 0x…` — if it differs from the linker
 script's RAM ORIGIN, adjust [inzone_anchor_nrf52833.ld](inzone_anchor_nrf52833.ld).
 
+## Bring-up console
+
+The same RTT channel doubles as a command console ([src/app/cli.c](src/app/cli.c)) —
+type into JLinkRTTViewer/JLinkRTTClient:
+
+| Command | What it tells you |
+|---|---|
+| `status` | build date, backend (stub/qani), uptime, anchor id/label, BLE + NI state, last range |
+| `spi` | reads the DW3110 `DEV_ID` over bit-banged SPI — `0xDECA03xx OK` proves the UWB chip is wired and powered (pulses RSTN and retries once if the first read fails). Refused while a NI session owns the bus. |
+| `uicr` | raw provisioning registers + decoded id/label — verifies `provision.ps1` without a reflash |
+| `led <boot\|adv\|conn\|range\|err\|id>` | force an LED pattern to check pins |
+| `reset` | reboot the MCU |
+
+The console is polled from the main loop, which sleeps between events —
+while advertising, keystrokes are picked up within ~100 ms (the BLE
+advertising interval), worst case 1 s (the CLI's uptime tick).
+
 ## Bring-up sequence (matches spec milestones M1–M2)
 
 1. **Stock sanity check:** flash Qorvo's prebuilt QANI `.hex` and verify
    ranging with Qorvo's iOS demo app — proves hardware + phone.
-2. **Stub build:** flash ours; verify advertising (`InZone-Ax`), identify
-   blink, and the message exchange against the In-Zone iOS app (the phone
-   will report an invalid NI config — expected, see `uwb_port_stub.c`).
+2. **Stub build:** flash ours; run `status` and `spi` on the bring-up
+   console (boot + DW3110 wiring), then verify advertising (`InZone-Ax`),
+   identify blink, and the message exchange against the In-Zone iOS app
+   (the phone will report an invalid NI config — expected, see
+   `uwb_port_stub.c`).
 3. **QANI build:** ✅ compiles and links (175 KB). Full FiRa session lifecycle
    in `uwb_port_qani.c`, real AES crypto via nrf_oberon, bare-metal QOSAL
    shims. **Next:** flash to boards, verify BLE advertising + DW3110 SPI
