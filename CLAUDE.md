@@ -32,10 +32,12 @@ responds. QANI `qspi_transceive` deadlock root-caused and patched (see
 IRQ pending+masked, PC stuck at the wait). Fix = poll the END event in
 the blocking branch instead of relying on the IRQ. Transfers now
 complete, **but** QANI init still doesn't finish — the DW driver then
-loops doing SPI reads (likely polling a chip-ready bit that never sets;
-the DW3110 boots asleep). Next: trace the DW init/wakeup loop. Chip is
-confirmed healthy (stub reads DEV_ID=0xDECA0302). Board currently holds
-the working stub build.
+loops doing SPI reads during DW init. Qorvo's prebuilt CLI reference
+(`SDK/Binaries/DWM3001CDK/...CLI-FreeRTOS.hex`) inits the DW3110 fine on
+this board (SPIM idle post-init), so **the board/chip are good — our
+QANI hang is a bare-metal port bug**, prime suspect the qirq_lock
+PRIMASK critical-section model vs Qorvo's FreeRTOS BASEPRI. See
+`firmware/patches/README.md`. Board currently holds the working stub.
 
 iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
 tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone

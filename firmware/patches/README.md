@@ -57,7 +57,28 @@ from SWD halts (so the next session doesn't re-derive them):
 
 Next lead: identify the DW3000 init step that retries (decode the `0xD6`
 register target; trace `llhw_init`/`dwt_initialise`/`dwt_configure`), and
-why the chip won't advance to the expected state (candidate: clock/XTAL
-or IDLE_RC not reached, or a config-verify mismatch). A known-good run of
-Qorvo's stock DWM3001CDK firmware would give a reference init sequence to
-diff against.
+why the chip won't advance to the expected state.
+
+### Reference test: board is GOOD (2026-06-16)
+
+Flashed Qorvo's prebuilt `SDK/Binaries/DWM3001CDK/DWM3001CDK-CLI-FreeRTOS.hex`
+(`nrfjprog --program ... --chiperase --reset`) and inspected over SWD:
+`SPIM3.ENABLE=0` steadily, PC busy-polling in its own loop (UARTE0/1 also
+off — the Qorvo CLI talks over the nRF52833 **native USB**, a separate
+connector, which is why the J-Link VCOM COM4 was silent). So Qorvo's
+firmware **completes DW3110 init** on this exact board and goes idle.
+
+Conclusion: **the hardware is fine; our QANI hang is a bug in our
+bare-metal port, not the board or chip.** The most likely culprit is the
+QOSAL layer differing from Qorvo's FreeRTOS: our `qirq_lock` masks all
+interrupts via `PRIMASK` (`cpsid i`) — FreeRTOS uses BASEPRI and keeps
+high-priority IRQs live. If a broad/long `PRIMASK` critical section wraps
+DW init, anything interrupt-driven the driver needs (timers, the DW IRQ
+on P1.02/GPIOTE) is dead. Next: check whether PRIMASK is held across init
+(not just during one SPI xfer) and whether the DW IRQ is serviced.
+
+To re-run the reference: `nrfjprog -f nrf52 --program \
+SDK/.../Binaries/DWM3001CDK/DWM3001CDK-CLI-FreeRTOS.hex --chiperase --reset`
+(then restore ours: rebuild stub/qani + flash SoftDevice + app). To drive
+the Qorvo CLI interactively, plug a cable into the board's nRF USB
+connector — a new COM port appears for it.
