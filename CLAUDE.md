@@ -19,6 +19,15 @@ from Qorvo's reference firmware. Not yet tested on hardware.
 A bring-up console (src/app/cli.c) runs over the RTT log channel:
 `status` / `spi` (bit-banged DW3110 DEV_ID probe) / `uicr` / `led` / `reset`.
 
+**Hardware bring-up (2026-06-16):** stub build verified on a real DWM3001CDK
+— boots, SoftDevice + BLE advertising up, and the `spi` probe reads
+`DEV_ID=0xDECA0302 OK`. Gotcha found in the process: the DW3110 **CS is on
+P1.06** (port 1), not P0.06 — only CS/WU/IRQ are on port 1, the other SPI
+lines are port 0 (see Qorvo `uwb_stack_llhw.cmake` / our Makefile CFLAGS).
+The DW3110 also boots **asleep**; a >400 µs CS-low pulse wakes it before SPI
+responds. QANI build still hangs in `qspi_transceive` (QOSAL/SPIM completion
+shim) — that's the next firmware problem, and the chip is confirmed healthy.
+
 iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
 tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone
 capture + fingerprint detection, 2D room map with trilateration, simulator

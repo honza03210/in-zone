@@ -19,12 +19,13 @@
 
 #define CLI_LINE_MAX 32
 
-/* DW3110 SPI pins (DWM3001CDK module wiring, same as the QANI config
- * in the Makefile). Only used by the bit-banged `spi` probe. */
+/* DW3110 SPI pins (DWM3001CDK module wiring, same as the QANI config in the
+ * Makefile / Qorvo's uwb_stack_llhw.cmake). NOTE: CS is on PORT 1 (P1.06) —
+ * the other SPI lines are port 0. Only used by the bit-banged `spi` probe. */
 #define DW_SCK_PIN   NRF_GPIO_PIN_MAP(0, 3)
 #define DW_MOSI_PIN  NRF_GPIO_PIN_MAP(0, 8)
 #define DW_MISO_PIN  NRF_GPIO_PIN_MAP(0, 29)
-#define DW_CS_PIN    NRF_GPIO_PIN_MAP(0, 6)
+#define DW_CS_PIN    NRF_GPIO_PIN_MAP(1, 6)
 #define DW_RSTN_PIN  NRF_GPIO_PIN_MAP(0, 25)
 
 static char     m_line[CLI_LINE_MAX];
@@ -64,6 +65,17 @@ static uint8_t spi_xfer_byte(uint8_t out)
     return in;
 }
 
+/* The QM33/DW3110 powers up in SLEEP and ignores SPI until woken: hold CS
+ * low >400 us, raise it, then wait ~500 us for it to reach IDLE_RC. Mirrors
+ * qpwr_uwb_wakeup() (WAKEUP_CS_TOGGLE_US / WAKEUP_DELAY_US) in the Qorvo SDK. */
+static void dw_wakeup(void)
+{
+    nrf_gpio_pin_clear(DW_CS_PIN);
+    nrf_delay_us(400);
+    nrf_gpio_pin_set(DW_CS_PIN);
+    nrf_delay_us(500);
+}
+
 static uint32_t dw_read_dev_id(void)
 {
     nrf_gpio_pin_clear(DW_CS_PIN);
@@ -95,17 +107,19 @@ static void cmd_spi(void)
     nrf_gpio_pin_set(DW_CS_PIN);
     nrf_delay_us(10);
 
+    dw_wakeup(); /* DW3110 boots asleep; must wake it before SPI responds */
     uint32_t id = dw_read_dev_id();
 
     if ((id >> 16) != 0xDECA) {
-        /* Maybe asleep or held in reset; pulse RSTN (open-drain low
-         * pulse, never drive high) and retry once. */
+        /* Maybe held in reset; pulse RSTN (open-drain low pulse, never
+         * drive high), wake again, and retry once. */
         cli_printf("spi: DEV_ID=0x%08x invalid, pulsing RSTN...\r\n", id);
         nrf_gpio_cfg_output(DW_RSTN_PIN);
         nrf_gpio_pin_clear(DW_RSTN_PIN);
         nrf_delay_ms(1);
         nrf_gpio_cfg_default(DW_RSTN_PIN); /* release, chip pulls high */
         nrf_delay_ms(5);                   /* wait for IDLE_RC */
+        dw_wakeup();
         id = dw_read_dev_id();
     }
 
