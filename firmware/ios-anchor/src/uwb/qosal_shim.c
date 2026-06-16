@@ -52,7 +52,12 @@ const char *qerr_to_str(enum qerr error)
 
 /* ---- qmalloc ---- */
 
-#define HEAP_SIZE 8192
+/* The uwb stack (uwbmac + niq + FiRa) needs a substantial heap during init.
+ * Qorvo's FreeRTOS build sets configTOTAL_HEAP_SIZE = 50 KB; match that. Our
+ * 8 KB arena OOM'd mid-init, qmalloc returned NULL, and the NULL was written
+ * through -> HardFault in nrf_balloc_init. nRF52833 has 128 KB RAM and the
+ * app region is ~120 KB, so 50 KB of .bss heap fits with room for the stack. */
+#define HEAP_SIZE (50 * 1024)
 static uint8_t  s_heap[HEAP_SIZE];
 static uint32_t s_heap_used;
 
@@ -302,13 +307,17 @@ void qtime_usleep_yield(uint32_t us) { qtime_usleep(us); }
  * state. Under the SoftDevice that deadlocked DW3110 bring-up: a transfer
  * issued inside a lock could never complete, and the next one returned BUSY.
  *
- * Use BASEPRI to mask everything the old PRIMASK did EXCEPT the one IRQ we
- * must keep live: the SPIM3 DMA-completion IRQ (priority 3). Masking >= 4
- * covers the SoftDevice's low SWI (4), the DW IRQ (7), GPIOTE (6) and timers,
- * matching the original critical-section coverage, while priority 3 (SPIM3)
- * stays enabled so nrfx_spim can complete transfers and clear its state.
- * (Leaving SoftDevice timing-critical pri 0/1 unmasked is correct anyway.) */
-#define QIRQ_LOCK_BASEPRI ((uint32_t)(4u << (8u - __NVIC_PRIO_BITS)))
+ * Use BASEPRI to mask only the uwb stack's own low-priority IRQs (>= 5: DW
+ * pri 7, GPIOTE pri 6, timers) while leaving everything the SoftDevice and
+ * the SPI driver need LIVE:
+ *   - pri 0/1  SoftDevice timing-critical (never mask)
+ *   - pri 3    SPIM3 DMA completion (nrfx needs it to finish transfers)
+ *   - pri 4    SoftDevice SVCall + low SWI — masking this makes any sd_*()
+ *              call inside a lock HardFault (the SVC can't be taken). The
+ *              uwb stack calls sd_flash_*() from inside qirq_lock, so pri 4
+ *              MUST stay enabled.
+ * This is the standard app critical-section model under the SoftDevice. */
+#define QIRQ_LOCK_BASEPRI ((uint32_t)(5u << (8u - __NVIC_PRIO_BITS)))
 
 void qirq_disable(void)
 {

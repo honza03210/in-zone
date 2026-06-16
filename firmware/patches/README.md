@@ -90,19 +90,32 @@ leaving SPIM3 (pri3) and SD timing-critical (0/1) live — the FreeRTOS model.
 
 Verified on hardware: SPIM goes idle, the init **advances past the SPI loop**.
 
-### Next: HardFault in nrf_balloc_init (open)
+### BASEPRI threshold MUST be >= 5 (not >= 4)
 
-With the deadlock gone, boot now HardFaults (IPSR=3; imprecise→precise bus
-fault, CFSR IMPRECISERR). Precise PC = `nrf_balloc_init` (nrf_balloc.c:279,
-`p_pool->p_cb->p_stack_pointer = ...`) with `p_cb` a bad pointer; stacked R0
-and LR both = 0x00047DFC (a rodata addr), i.e. a corrupted call/args, not a
-normal init. Tightening BASEPRI (>=5 → >=4) did not change it, so it's not the
-SD-SWI-preemption race. Prime suspect: the bare-metal bump allocator
-(`qmalloc` in qosal_shim.c) overflowing during uwbmac/niq init and returning
-bad pointers → corrupted balloc control block → faulting write. Next: check
-the bump arena size/exhaustion and qmalloc's overflow behavior; consider
-enlarging the arena or adding an overflow assert. (Reached from
-`fira_uwb_mcps_init` now that SPI works.)
+Settled the threshold: mask priority **>= 5** (BASEPRI 0xA0). The SoftDevice's
+**SVCall is priority 4** — masking >= 4 makes any `sd_*()` call inside a
+qirq_lock HardFault (the SVC can't be taken). The uwb stack's `qflash_write`
+calls `sd_flash_page_erase` from inside a lock, so at >= 4 it faulted in
+`sd_flash_page_erase` (precise PC, FP exception frame). At >= 5, SVCall (4),
+the SPIM3 IRQ (3) and SD timing-critical (0/1) all stay live, masking only the
+stack's own IRQs (DW 7, GPIOTE 6, timers). (An earlier "nrf_balloc_init"
+reading at >= 4 was a mis-read from the wrong MSP — the real frame is an FP
+frame at a different SP; always read MSP from regs.)
+
+### Next: HardFault in nrf_balloc_init (open, with BASEPRI >= 5)
+
+With the threshold correct, boot now advances further but still HardFaults
+(precise PC = `nrf_balloc_init` nrf_balloc.c:279, `p_pool->p_cb->...`), with
+stacked R0 == LR == 0x00047DFC (a rodata addr) — a corrupted call, not a
+normal init. `s_heap_used == 0` at the fault, so it is NOT the bump allocator
+(qmalloc untouched); raising HEAP_SIZE 8K → 50K (to match Qorvo's
+configTOTAL_HEAP_SIZE, needed later anyway) did not change it. This is a
+distinct memory-corruption bug in early `fira_uwb_mcps_init`
+(qplatform_init / l1_config_init, before uwbmac allocates). Next: trace the
+caller of nrf_balloc_init (which pool? why R0 is a rodata literal), and the
+l1_config / qflash flash-config path on a chip-erased board (no stored
+l1_config → it writes defaults via sd_flash). Consider whether a dedicated
+flash region for l1_config is reserved in the linker.
 
 To re-run the reference: `nrfjprog -f nrf52 --program \
 SDK/.../Binaries/DWM3001CDK/DWM3001CDK-CLI-FreeRTOS.hex --chiperase --reset`
