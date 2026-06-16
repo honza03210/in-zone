@@ -27,8 +27,21 @@ $snrArg = if ($Snr) { @("--snr", $Snr) } else { @() }
 
 function Invoke-Nrfjprog {
     param([string[]]$Arguments)
-    & nrfjprog -f nrf52 @snrArg @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "nrfjprog failed: nrfjprog $($Arguments -join ' ')" }
+    # nrfjprog --memwr exits non-zero with "perform no operation" when the
+    # target already holds the requested value (re-provisioning the same id/
+    # label). That's harmless for us. Drop the error preference locally so
+    # PowerShell 5.1 doesn't turn nrfjprog's stderr (via 2>&1) into a
+    # terminating NativeCommandError before we can inspect the message.
+    $ErrorActionPreference = 'Continue'
+    $output = (& nrfjprog -f nrf52 @snrArg @Arguments 2>&1 | Out-String)
+    Write-Host $output.TrimEnd()
+    if ($LASTEXITCODE -ne 0) {
+        if ($output -match 'perform no operation') {
+            Write-Host "  note: value already programmed; continuing." -ForegroundColor Yellow
+        } else {
+            throw "nrfjprog failed: nrfjprog $($Arguments -join ' ')"
+        }
+    }
 }
 
 if ($EraseUicr) {
