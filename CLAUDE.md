@@ -25,8 +25,17 @@ A bring-up console (src/app/cli.c) runs over the RTT log channel:
 P1.06** (port 1), not P0.06 — only CS/WU/IRQ are on port 1, the other SPI
 lines are port 0 (see Qorvo `uwb_stack_llhw.cmake` / our Makefile CFLAGS).
 The DW3110 also boots **asleep**; a >400 µs CS-low pulse wakes it before SPI
-responds. QANI build still hangs in `qspi_transceive` (QOSAL/SPIM completion
-shim) — that's the next firmware problem, and the chip is confirmed healthy.
+responds. QANI `qspi_transceive` deadlock root-caused and patched (see
+`firmware/patches/README.md`): the DW bring-up runs with `PRIMASK=1`
+(qirq_lock `cpsid i`), so the SPIM `END` interrupt that sets
+`txf_is_finished` never fires — confirmed via SWD halt (transfer done,
+IRQ pending+masked, PC stuck at the wait). Fix = poll the END event in
+the blocking branch instead of relying on the IRQ. Transfers now
+complete, **but** QANI init still doesn't finish — the DW driver then
+loops doing SPI reads (likely polling a chip-ready bit that never sets;
+the DW3110 boots asleep). Next: trace the DW init/wakeup loop. Chip is
+confirmed healthy (stub reads DEV_ID=0xDECA0302). Board currently holds
+the working stub build.
 
 iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
 tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone
