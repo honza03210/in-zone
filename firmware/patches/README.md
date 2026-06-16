@@ -77,6 +77,33 @@ DW init, anything interrupt-driven the driver needs (timers, the DW IRQ
 on P1.02/GPIOTE) is dead. Next: check whether PRIMASK is held across init
 (not just during one SPI xfer) and whether the DW IRQ is serviced.
 
+### qirq_lock PRIMASK → BASEPRI (fixed, in our tree: src/uwb/qosal_shim.c)
+
+Root cause of the SPI loop confirmed: `qirq_lock` used `cpsid i` (PRIMASK),
+masking ALL interrupts — including the SPIM3 completion IRQ (pri 3). nrfx_spim
+is interrupt-driven and clears its `transfer_in_progress` state only in that
+IRQ, so with it masked the first transfer never completes and the next returns
+BUSY → the init loop. (The qspi.c END-poll patch alone can't fix this: nrfx's
+own state never clears.) Fix: `qirq_lock`/`qirq_disable` now raise BASEPRI to
+mask priority >= 4 (covers DW pri7, GPIOTE pri6, timers, SD SWI pri4) while
+leaving SPIM3 (pri3) and SD timing-critical (0/1) live — the FreeRTOS model.
+
+Verified on hardware: SPIM goes idle, the init **advances past the SPI loop**.
+
+### Next: HardFault in nrf_balloc_init (open)
+
+With the deadlock gone, boot now HardFaults (IPSR=3; imprecise→precise bus
+fault, CFSR IMPRECISERR). Precise PC = `nrf_balloc_init` (nrf_balloc.c:279,
+`p_pool->p_cb->p_stack_pointer = ...`) with `p_cb` a bad pointer; stacked R0
+and LR both = 0x00047DFC (a rodata addr), i.e. a corrupted call/args, not a
+normal init. Tightening BASEPRI (>=5 → >=4) did not change it, so it's not the
+SD-SWI-preemption race. Prime suspect: the bare-metal bump allocator
+(`qmalloc` in qosal_shim.c) overflowing during uwbmac/niq init and returning
+bad pointers → corrupted balloc control block → faulting write. Next: check
+the bump arena size/exhaustion and qmalloc's overflow behavior; consider
+enlarging the arena or adding an overflow assert. (Reached from
+`fira_uwb_mcps_init` now that SPI works.)
+
 To re-run the reference: `nrfjprog -f nrf52 --program \
 SDK/.../Binaries/DWM3001CDK/DWM3001CDK-CLI-FreeRTOS.hex --chiperase --reset`
 (then restore ours: rebuild stub/qani + flash SoftDevice + app). To drive

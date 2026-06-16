@@ -32,12 +32,17 @@ responds. QANI `qspi_transceive` deadlock root-caused and patched (see
 IRQ pending+masked, PC stuck at the wait). Fix = poll the END event in
 the blocking branch instead of relying on the IRQ. Transfers now
 complete, **but** QANI init still doesn't finish — the DW driver then
-loops doing SPI reads during DW init. Qorvo's prebuilt CLI reference
+looped doing SPI reads during DW init. Qorvo's prebuilt CLI reference
 (`SDK/Binaries/DWM3001CDK/...CLI-FreeRTOS.hex`) inits the DW3110 fine on
-this board (SPIM idle post-init), so **the board/chip are good — our
-QANI hang is a bare-metal port bug**, prime suspect the qirq_lock
-PRIMASK critical-section model vs Qorvo's FreeRTOS BASEPRI. See
-`firmware/patches/README.md`. Board currently holds the working stub.
+this board (SPIM idle post-init) — **board/chip are good, the bug is in
+our bare-metal port.** Fixed the SPI loop: `qirq_lock` used `cpsid i`
+(PRIMASK), masking the SPIM3 completion IRQ that nrfx needs → deadlock.
+Reworked qirq_lock/qirq_disable to raise BASEPRI (mask pri >= 4, keep
+SPIM3 pri3 + SD live), the FreeRTOS model. Init now advances past the
+SPI loop but HardFaults later in `nrf_balloc_init` (bad p_cb / corrupted
+call) — prime suspect the bump allocator (qmalloc) overflowing during
+uwbmac/niq init. Full trace in `firmware/patches/README.md`. Board
+currently holds the working stub.
 
 iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
 tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone

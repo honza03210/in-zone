@@ -293,16 +293,33 @@ void qtime_usleep(uint32_t us)
 void qtime_msleep_yield(uint32_t ms) { qtime_msleep(ms); }
 void qtime_usleep_yield(uint32_t us) { qtime_usleep(us); }
 
-/* ---- qirq ---- */
+/* ---- qirq ----
+ *
+ * The uwb stack guards its data with qirq_lock/qirq_disable. The original
+ * implementation used cpsid i / __disable_irq (PRIMASK), which masks ALL
+ * interrupts — including the SPIM3 DMA-completion IRQ (priority 3) that
+ * nrfx_spim needs to finish a transfer and clear its transfer_in_progress
+ * state. Under the SoftDevice that deadlocked DW3110 bring-up: a transfer
+ * issued inside a lock could never complete, and the next one returned BUSY.
+ *
+ * Use BASEPRI to mask everything the old PRIMASK did EXCEPT the one IRQ we
+ * must keep live: the SPIM3 DMA-completion IRQ (priority 3). Masking >= 4
+ * covers the SoftDevice's low SWI (4), the DW IRQ (7), GPIOTE (6) and timers,
+ * matching the original critical-section coverage, while priority 3 (SPIM3)
+ * stays enabled so nrfx_spim can complete transfers and clear its state.
+ * (Leaving SoftDevice timing-critical pri 0/1 unmasked is correct anyway.) */
+#define QIRQ_LOCK_BASEPRI ((uint32_t)(4u << (8u - __NVIC_PRIO_BITS)))
 
 void qirq_disable(void)
 {
-    __disable_irq();
+    __set_BASEPRI(QIRQ_LOCK_BASEPRI);
+    __DSB();
+    __ISB();
 }
 
 void qirq_enable(void)
 {
-    __enable_irq();
+    __set_BASEPRI(0);
 }
 
 bool qirq_is_in_irq(void)
@@ -312,15 +329,16 @@ bool qirq_is_in_irq(void)
 
 unsigned int qirq_lock(void)
 {
-    unsigned int key;
-    __asm volatile ("mrs %0, PRIMASK\n\t"
-                    "cpsid i" : "=r"(key));
+    unsigned int key = __get_BASEPRI();
+    __set_BASEPRI(QIRQ_LOCK_BASEPRI);
+    __DSB();
+    __ISB();
     return key;
 }
 
 void qirq_unlock(unsigned int key)
 {
-    __asm volatile ("msr PRIMASK, %0" :: "r"(key));
+    __set_BASEPRI(key);
 }
 
 /* ---- qworkqueue (stubs) ---- */
