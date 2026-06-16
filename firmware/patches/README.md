@@ -33,7 +33,31 @@ if (!spi->txf_is_finished) {
 ```
 
 This resolves the single-transfer deadlock — transfers now complete with
-interrupts masked. **Not yet sufficient for full QANI bring-up:** after this,
-the DW driver progresses but appears to loop doing SPI reads during init
-(likely polling a chip-ready status that never sets — the DW3110 boots
-asleep, see the stub `spi` wakeup finding). That is the next thing to debug.
+interrupts masked.
+
+### Remaining QANI init loop (open)
+
+After the poll fix, QANI still doesn't finish booting — it loops in
+`fira_uwb_mcps_init` doing SPI during DW3110 bring-up. Hardware findings
+from SWD halts (so the next session doesn't re-derive them):
+
+- **Not a deadlock anymore:** SPIM state cycles (ENABLE 7↔0), transfers
+  complete. PC is ~always in `qspi_transceive` only because that's the
+  hottest code in a higher-level retry loop.
+- **CS is fine:** P1.06 is an output and driven low (asserted) during
+  transfers (`P1.DIR` bit6=1, `P1.OUT` bit6=0). Earlier CS-port bug was
+  the stub probe only; the QANI/Makefile CS port was always correct.
+- **Pins/ports correct, IRQ priority 3 (SD-compatible), delays real**
+  (`qtime_*` are busy-loops, ~4x long if anything, not no-ops).
+- **Chip responds at least partially:** an RX buffer once held `DE` (top
+  byte of DEV_ID 0xDECA0302), so the probe got past DEV_ID; but most
+  reads return zeros.
+- **The loop's SPI transaction is a register WRITE** (TX header byte
+  `0xD6...`), i.e. an init step being retried, not a plain status poll.
+
+Next lead: identify the DW3000 init step that retries (decode the `0xD6`
+register target; trace `llhw_init`/`dwt_initialise`/`dwt_configure`), and
+why the chip won't advance to the expected state (candidate: clock/XTAL
+or IDLE_RC not reached, or a config-verify mismatch). A known-good run of
+Qorvo's stock DWM3001CDK firmware would give a reference init sequence to
+diff against.
