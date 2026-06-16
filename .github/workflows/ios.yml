@@ -81,3 +81,43 @@ jobs:
           name: TestResults
           path: ios/InZone/TestResults.xcresult
           retention-days: 7
+
+      # Build an UNSIGNED .ipa for sideloading. AltStore (Windows) re-signs it
+      # with a free Apple ID on install, so we just need the app bundle wrapped
+      # in a Payload/ folder. Device build (generic/platform=iOS), no signing.
+      # Skipped on PRs to save macOS minutes; runs on push to main + manual run.
+      - name: Build device app (unsigned)
+        if: github.event_name != 'pull_request'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project InZone.xcodeproj \
+            -scheme InZone \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            clean build \
+            | xcbeautify
+
+      - name: Package unsigned .ipa
+        if: github.event_name != 'pull_request'
+        run: |
+          set -e
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
+          if [ -z "$APP" ]; then echo "no .app produced"; exit 1; fi
+          echo "packaging $APP"
+          rm -rf Payload InZone-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          # -y preserves symlinks (matters for any embedded frameworks)
+          zip -qry InZone-unsigned.ipa Payload
+          ls -la InZone-unsigned.ipa
+
+      - name: Upload unsigned .ipa
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v5
+        with:
+          name: InZone-unsigned-ipa
+          path: ios/InZone/InZone-unsigned.ipa
+          retention-days: 14
