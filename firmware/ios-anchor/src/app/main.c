@@ -26,6 +26,41 @@
 
 static volatile bool m_connected;
 
+/* --- HardFault capture ---
+ * The default weak HardFault_Handler is a bare spin loop that loses the
+ * faulting context. Snapshot the exception frame + fault status registers
+ * into globals so they can be read cleanly over SWD during QANI bring-up. */
+volatile uint32_t g_fault[8];   /* r0,r1,r2,r3,r12,lr,pc,xpsr */
+volatile uint32_t g_cfsr, g_hfsr, g_bfar, g_mmfar;
+volatile uint32_t g_fault_lr;   /* EXC_RETURN */
+
+void hard_fault_capture(uint32_t *frame, uint32_t exc_return)
+{
+    for (int i = 0; i < 8; i++) {
+        g_fault[i] = frame[i];
+    }
+    g_fault_lr = exc_return;
+    g_cfsr  = *(volatile uint32_t *)0xE000ED28;
+    g_hfsr  = *(volatile uint32_t *)0xE000ED2C;
+    g_mmfar = *(volatile uint32_t *)0xE000ED34;
+    g_bfar  = *(volatile uint32_t *)0xE000ED38;
+    for (;;) {
+        __asm volatile("nop");
+    }
+}
+
+__attribute__((naked)) void HardFault_Handler(void)
+{
+    __asm volatile(
+        "tst lr, #4            \n"
+        "ite eq                \n"
+        "mrseq r0, msp         \n"
+        "mrsne r0, psp         \n"
+        "mov  r1, lr           \n"
+        "b    hard_fault_capture\n"
+    );
+}
+
 static void on_conn_change(bool connected)
 {
     m_connected = connected;

@@ -32,17 +32,27 @@ responds. QANI `qspi_transceive` deadlock root-caused and patched (see
 IRQ pending+masked, PC stuck at the wait). Fix = poll the END event in
 the blocking branch instead of relying on the IRQ. Transfers now
 complete, **but** QANI init still doesn't finish — the DW driver then
-looped doing SPI reads during DW init. Qorvo's prebuilt CLI reference
-(`SDK/Binaries/DWM3001CDK/...CLI-FreeRTOS.hex`) inits the DW3110 fine on
-this board (SPIM idle post-init) — **board/chip are good, the bug is in
-our bare-metal port.** Fixed the SPI loop: `qirq_lock` used `cpsid i`
-(PRIMASK), masking the SPIM3 completion IRQ that nrfx needs → deadlock.
-Reworked qirq_lock/qirq_disable to raise BASEPRI (mask pri >= 4, keep
-SPIM3 pri3 + SD live), the FreeRTOS model. Init now advances past the
-SPI loop but HardFaults later in `nrf_balloc_init` (bad p_cb / corrupted
-call) — prime suspect the bump allocator (qmalloc) overflowing during
-uwbmac/niq init. Full trace in `firmware/patches/README.md`. Board
-currently holds the working stub.
+**QANI now boots on hardware (2026-06-16):** completes the full uwb-stack
+init, drives the DW3110, and advertises with no fault (verified via SWD:
+`g_fault`=0, SPIM cycling, advertising LED). Three bare-metal port bugs
+fixed (see `firmware/patches/README.md` for the SWD traces):
+1. `qirq_lock` used `cpsid i` (PRIMASK), masking the SPIM3 completion IRQ
+   nrfx needs → SPI deadlock. Reworked to raise BASEPRI **mask pri >= 5**
+   (keeps SPIM3 pri3 AND the SoftDevice incl. SVCall pri4 live; masking
+   pri4 made sd_*() calls fault). FreeRTOS model.
+2. `l1_config` persist sections were orphans landing in .rodata (~0x47E90);
+   its runtime flash page-erase wiped app code → HardFault calling an
+   erased handler. Pinned them to dedicated flash pages (0x7D000/0x7E000)
+   in the linker.
+3. our `qworkqueue_init` shim had the WRONG signature vs qworkqueue.h
+   (`qworkqueue_init(handler, priv)` returning a handle) → it wrote
+   through the handler fn-ptr → unaligned fault. Rewrote the workqueue
+   shim to match the real API.
+Also: qmalloc heap 8K→50K (matches Qorvo), a real HardFault_Handler in
+main.c that captures the fault frame to globals (g_fault/g_cfsr) for SWD,
+and the qspi.c END-poll patch (now belt-and-suspenders). **Next: verify
+actual NI ranging with the iPhone (needs the Mac app); confirm the
+"QANI backend initialised" log over RTT.** Board currently holds QANI.
 
 iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
 tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone

@@ -99,6 +99,22 @@ SECTIONS
     KEEP(*(SORT(.pwr_mgmt_data*)))
     PROVIDE(__stop_pwr_mgmt_data = .);
   } > FLASH
+
+  /* l1_config (DW3110 calibration/config) persists to flash at runtime via
+   * sd_flash, page-erasing the page that holds its storage. The precompiled
+   * uwbstack bundle emits these as orphan sections; left unplaced they land in
+   * .rodata (~0x47E90) and the erase wipes application code -> HardFault.
+   * Pin them to dedicated, page-aligned (4 KB) flash pages clear of code
+   * (text ends ~0x48288; these sit near the top of the 0x1C000..0x80000
+   * region). Each gets its own page so an erase touches nothing else. */
+  .l1_config_persist_storage 0x7D000 (NOLOAD) :
+  {
+    KEEP(*(.l1_config_persist_storage))
+  }
+  .l1_config_persist_storage_sha256 0x7E000 (NOLOAD) :
+  {
+    KEEP(*(.l1_config_persist_storage_sha256))
+  }
 } INSERT AFTER .text
 
 INCLUDE "nrf_common.ld"

@@ -350,36 +350,54 @@ void qirq_unlock(unsigned int key)
     __set_BASEPRI(key);
 }
 
-/* ---- qworkqueue (stubs) ---- */
+/* ---- qworkqueue ----
+ * Real API (qosal/include/qworkqueue.h):
+ *   struct qworkqueue *qworkqueue_init(qwork_func handler, void *priv);
+ *   enum qerr qworkqueue_schedule_work(struct qworkqueue *wq);
+ *   enum qerr qworkqueue_cancel_work(struct qworkqueue *wq);
+ * The earlier stub had the WRONG signatures (treated arg0 as a struct
+ * pointer), so the stack's qworkqueue_init(handler, priv) call wrote through
+ * the handler function pointer -> unaligned write to read-only flash ->
+ * HardFault during mcps802154_alloc_llhw. Bare-metal: no task — schedule runs
+ * the handler inline; handles come from a small static pool (no qfree). */
+typedef void (*qwork_func)(void *arg);
 
-struct qworkqueue { int dummy; };
+struct qworkqueue {
+    qwork_func handler;
+    void      *priv;
+    bool       in_use;
+};
 
-struct qworkqueue *qworkqueue_create(const char *name, void *stack,
-                                     uint32_t stack_size, int priority)
+#define QWQ_POOL_SIZE 8
+static struct qworkqueue s_wq_pool[QWQ_POOL_SIZE];
+
+struct qworkqueue *qworkqueue_init(qwork_func handler, void *priv)
 {
-    (void)name; (void)stack; (void)stack_size; (void)priority;
+    for (int i = 0; i < QWQ_POOL_SIZE; i++) {
+        if (!s_wq_pool[i].in_use) {
+            s_wq_pool[i].handler = handler;
+            s_wq_pool[i].priv = priv;
+            s_wq_pool[i].in_use = true;
+            return &s_wq_pool[i];
+        }
+    }
     return NULL;
 }
 
-void qworkqueue_destroy(struct qworkqueue *wq) { (void)wq; }
-
-struct qwork { void (*func)(void *); void *arg; };
-
-void qworkqueue_init(struct qwork *work, void (*func)(void *), void *arg)
+enum qerr qworkqueue_schedule_work(struct qworkqueue *wq)
 {
-    if (work) { work->func = func; work->arg = arg; }
-}
-
-enum qerr qworkqueue_schedule_work(struct qworkqueue *wq, struct qwork *work)
-{
-    (void)wq;
-    if (work && work->func) work->func(work->arg);
+    if (!wq || !wq->handler) {
+        return QERR_EINVAL;
+    }
+    wq->handler(wq->priv); /* bare-metal: run inline */
     return QERR_SUCCESS;
 }
 
-enum qerr qworkqueue_cancel_work(struct qwork *work)
+enum qerr qworkqueue_cancel_work(struct qworkqueue *wq)
 {
-    (void)work;
+    if (wq) {
+        wq->in_use = false;
+    }
     return QERR_SUCCESS;
 }
 

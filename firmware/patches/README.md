@@ -102,7 +102,38 @@ stack's own IRQs (DW 7, GPIOTE 6, timers). (An earlier "nrf_balloc_init"
 reading at >= 4 was a mis-read from the wrong MSP — the real frame is an FP
 frame at a different SP; always read MSP from regs.)
 
-### Next: HardFault in nrf_balloc_init (open, with BASEPRI >= 5)
+### RESOLVED: l1_config erased app code; qworkqueue signature mismatch
+
+A clean HardFault_Handler (main.c, captures the frame to g_fault/g_cfsr)
+gave reliable traces and revealed two more bugs after the BASEPRI fix:
+
+1. **l1_config flash section overlap.** Fault was the SoftDevice event
+   dispatcher (SWI2 / nrf_sdh_evts_poll) calling a handler at 0xFFFFFFFE
+   (erased flash). Cause: `l1_config` persists config via sd_flash and
+   page-erases the page holding its storage; the precompiled bundle emits
+   `.l1_config_persist_storage` / `..._sha256` as ORPHAN sections that
+   landed in .rodata at ~0x47E90, so the erase wiped app code. Fix: pin
+   both sections to dedicated 4 KB flash pages (0x7D000 / 0x7E000) in
+   inzone_anchor_nrf52833.ld. NOTE: the linker script is not a make
+   prerequisite — `rm _build/*.out` to force a relink after editing it.
+
+2. **qworkqueue shim signature mismatch.** Next fault was an UNALIGNED
+   UsageFault in our qworkqueue_init (qosal_shim.c) writing through arg0.
+   The real API (qosal/include/qworkqueue.h) is
+   `struct qworkqueue *qworkqueue_init(qwork_func handler, void *priv)` —
+   our stub took `(struct qwork*, func, arg)`, so the stack's
+   `qworkqueue_init(handler, priv)` made us write through the handler
+   fn-ptr. Rewrote the workqueue shim (init/schedule/cancel) to match;
+   schedule runs the handler inline (bare-metal, no task).
+
+Result: QANI boots fully, drives the DW3110, advertises, no fault.
+
+Open: end-to-end NI ranging with the iPhone (needs the Mac-built app),
+and confirming the "QANI backend initialised" niq log over RTT. Also note
+the inline qworkqueue_schedule_work may need deferral-to-main-loop if a
+work item is scheduled from an ISR and is heavy/re-entrant.
+
+#### (historical) earlier mis-diagnosis
 
 With the threshold correct, boot now advances further but still HardFaults
 (precise PC = `nrf_balloc_init` nrf_balloc.c:279, `p_pool->p_cb->...`), with
