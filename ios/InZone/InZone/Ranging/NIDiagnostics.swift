@@ -18,6 +18,21 @@ final class NIDiagnostics: ObservableObject {
     /// Set true once any NI session has produced a distance — proves NI works.
     @Published private(set) var everRanged = false
 
+    // Handshake step counters, to pinpoint where ranging stalls on-device:
+    // initialize sent -> accessory config received from anchor -> NI session
+    // started -> shareable config generated -> configure sent to anchor.
+    @Published private(set) var initSent = 0
+    @Published private(set) var cfgReceived = 0
+    @Published private(set) var sessionStarted = 0
+    @Published private(set) var shareableGenerated = 0
+    @Published private(set) var configureSent = 0
+
+    func noteInitSent()    { DispatchQueue.main.async { self.initSent += 1 } }
+    func noteCfgReceived() { DispatchQueue.main.async { self.cfgReceived += 1 } }
+    func noteSessionStarted()    { DispatchQueue.main.async { self.sessionStarted += 1 } }
+    func noteShareable()   { DispatchQueue.main.async { self.shareableGenerated += 1 } }
+    func noteConfigureSent() { DispatchQueue.main.async { self.configureSent += 1 } }
+
     private init() {
         // isSupported reports the hardware capability (U1/U2 chip present).
         supported = NISession.isSupported

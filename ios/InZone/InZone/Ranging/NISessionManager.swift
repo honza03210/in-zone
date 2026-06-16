@@ -28,6 +28,7 @@ class NISessionManager: NSObject {
                 bluetoothPeerIdentifier: anchorPeripheralId
             )
             s.run(config)
+            NIDiagnostics.shared.noteSessionStarted()
             log.info("NI session running for \(self.anchorPeripheralId)")
         } catch {
             log.error("NI config failed: \(error)")
@@ -52,6 +53,7 @@ extension NISessionManager: NISessionDelegate {
                  didGenerateShareableConfigurationData data: Data,
                  for object: NINearbyObject) {
         log.info("Shareable config ready (\(data.count) bytes)")
+        NIDiagnostics.shared.noteShareable()
         onShareableConfig?(data)
     }
 

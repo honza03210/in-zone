@@ -76,10 +76,12 @@ class BLEManager: NSObject, ObservableObject {
     }
 
     func sendInitialize(to anchorUUID: UUID) {
+        NIDiagnostics.shared.noteInitSent()
         send(to: anchorUUID, data: NIMessage.encodeInitialize())
     }
 
     func sendConfigure(to anchorUUID: UUID, shareableConfig: Data) {
+        NIDiagnostics.shared.noteConfigureSent()
         send(to: anchorUUID, data: NIMessage.encodeConfigure(shareableConfig: shareableConfig))
     }
 
@@ -215,6 +217,7 @@ extension BLEManager: CBPeripheralDelegate {
         switch NIMessage.parse(data) {
         case .accessoryConfig(let payload):
             log.info("Accessory config from \(anchorUUID) (\(payload.count) bytes)")
+            NIDiagnostics.shared.noteCfgReceived()
             onAccessoryConfig?(anchorUUID, payload)
         case .uwbDidStart:
             log.info("UWB started on \(anchorUUID)")

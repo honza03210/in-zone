@@ -186,6 +186,15 @@ struct LiveView: View {
             LabeledContent("NI ranged") {
                 Text(niDiag.everRanged ? "yes" : "no")
             }
+            // Handshake pipeline: each count should climb left-to-right;
+            // wherever it stops is the failing step.
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Handshake").font(.caption.bold())
+                Text("init=\(niDiag.initSent)  cfgRx=\(niDiag.cfgReceived)  sess=\(niDiag.sessionStarted)  shr=\(niDiag.shareableGenerated)  conf=\(niDiag.configureSent)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let e = niDiag.lastError {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("NI last error").font(.caption.bold())
