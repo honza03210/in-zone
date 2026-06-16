@@ -52,6 +52,19 @@ if ($EraseUicr) {
 Write-Host "Writing anchor id $AnchorId to UICR.CUSTOMER[0]..."
 Invoke-Nrfjprog @("--memwr", "0x10001080", "--val", "0x{0:X8}" -f $AnchorId)
 
+# UICR bits only flip 1->0, so writing a new id over an already-programmed
+# board silently does nothing (nrfjprog reports "no operation"). Read it back
+# and fail clearly before touching the label, instead of limping on.
+$ErrorActionPreference = 'Continue'
+$readback = (& nrfjprog -f nrf52 @snrArg --memrd 0x10001080 --n 4 2>&1 | Out-String)
+if ($readback -match '0x10001080:\s*([0-9A-Fa-f]{8})') {
+    $got = [Convert]::ToUInt32($Matches[1], 16)
+    if ($got -ne $AnchorId) {
+        throw ("Anchor id readback is 0x{0:X8}, expected 0x{1:X8}. This board's UICR is already programmed (flash bits only clear, never set). Re-run with -EraseUicr to change it." -f $got, $AnchorId)
+    }
+    Write-Host ("  verified id = 0x{0:X8}" -f $got) -ForegroundColor Green
+}
+
 if ($Label) {
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($Label)
     if ($bytes.Length -gt 16) { throw "Label exceeds 16 UTF-8 bytes" }
