@@ -6,6 +6,7 @@ struct LiveView: View {
     @EnvironmentObject var zoneEngine: ZoneEngine
     @EnvironmentObject var zoneStore: ZoneStore
     @EnvironmentObject var simulator: SimulatorService
+    @ObservedObject private var niDiag = NIDiagnostics.shared
 
     @State private var showDebug = false
 
@@ -14,6 +15,10 @@ struct LiveView: View {
             VStack(spacing: 0) {
                 zoneBanner
                     .animation(.easeInOut, value: zoneEngine.currentZone?.id)
+
+                if niDiag.isProblem && !simulator.isActive {
+                    niBanner
+                }
 
                 if simulator.isActive || scheduler.isRunning {
                     RoomCanvasView(compact: true)
@@ -69,6 +74,22 @@ struct LiveView: View {
             .frame(maxWidth: .infinity)
             .background(.ultraThinMaterial)
         }
+    }
+
+    // MARK: - Nearby Interaction status
+
+    private var niBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(niDiag.statusText)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.15))
     }
 
     // MARK: - Controls
@@ -155,6 +176,22 @@ struct LiveView: View {
             if zoneEngine.isDetecting {
                 LabeledContent("Confidence") {
                     Text(String(format: "%.1f%%", zoneEngine.zoneConfidence * 100))
+                }
+            }
+
+            Divider()
+            LabeledContent("NI supported") {
+                Text(niDiag.supported ? "yes" : "no")
+            }
+            LabeledContent("NI ranged") {
+                Text(niDiag.everRanged ? "yes" : "no")
+            }
+            if let e = niDiag.lastError {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("NI last error").font(.caption.bold())
+                    Text(e).font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

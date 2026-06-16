@@ -31,6 +31,7 @@ class NISessionManager: NSObject {
             log.info("NI session running for \(self.anchorPeripheralId)")
         } catch {
             log.error("NI config failed: \(error)")
+            NIDiagnostics.shared.report("config: \(error.localizedDescription)")
             session = nil
             onSessionInvalidated?()
         }
@@ -57,6 +58,7 @@ extension NISessionManager: NISessionDelegate {
     func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
         guard let obj = nearbyObjects.first else { return }
         if let d = obj.distance {
+            NIDiagnostics.shared.markRanged()
             onRangeUpdate?(d, obj.direction)
         }
     }
@@ -69,6 +71,7 @@ extension NISessionManager: NISessionDelegate {
 
     func session(_ session: NISession, didInvalidateWith error: Error) {
         log.error("NI session invalidated: \(error)")
+        NIDiagnostics.shared.report("invalidated: \(error.localizedDescription)")
         self.session = nil
         onSessionInvalidated?()
     }
