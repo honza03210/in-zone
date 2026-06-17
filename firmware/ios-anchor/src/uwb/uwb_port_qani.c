@@ -10,6 +10,12 @@
  */
 #include "uwb_port.h"
 #include "nrf_log.h"
+#include "nrf_log_ctrl.h"
+
+/* Diagnostic: log a step marker and flush it synchronously, so the last
+ * successful step is visible over RTT even if the next call resets the chip
+ * (e.g. a SoftDevice assert). Remove once ranging is stable. */
+#define STEP(msg) do { NRF_LOG_INFO("step: " msg); NRF_LOG_FLUSH(); } while (0)
 
 #include "niq.h"
 #include "uwbmac/uwbmac.h"
@@ -303,9 +309,11 @@ static int fira_session_start(void)
     m_output_result.str = m_result_buf;
     m_output_result.len = sizeof(m_result_buf);
 
+    STEP("pre uwbmac_set_promiscuous");
     uwbmac_set_promiscuous_mode(m_uwbmac_ctx, true);
     uwbmac_set_short_addr(m_uwbmac_ctx, short_addr);
 
+    STEP("pre fira_helper_open");
     r = fira_helper_open(&m_fira_ctx, m_uwbmac_ctx,
                          &on_fira_event, "endless", 0,
                          &m_output_result);
@@ -314,12 +322,14 @@ static int fira_session_start(void)
         return -1;
     }
 
+    STEP("pre set_scheduler");
     r = fira_helper_set_scheduler(&m_fira_ctx);
     if (r != QERR_SUCCESS) {
         NRF_LOG_ERROR("uwb: set_scheduler failed (%d)", r);
         goto err_close;
     }
 
+    STEP("pre init_session");
     r = fira_helper_init_session(
             &m_fira_ctx, m_session_id,
             QUWBS_FBS_SESSION_TYPE_RANGING_NO_IN_BAND_DATA,
@@ -330,6 +340,7 @@ static int fira_session_start(void)
     }
     m_session_handle = rsp.session_handle;
 
+    STEP("pre set_all_session_params");
     r = set_all_session_params(&m_fira_ctx, m_session_handle, &sp);
     if (r != QERR_SUCCESS) {
         NRF_LOG_ERROR("uwb: set_session_params failed (%d)", r);
@@ -349,12 +360,14 @@ static int fira_session_start(void)
         }
     }
 
+    STEP("pre uwbmac_start");
     r = uwbmac_start(m_uwbmac_ctx);
     if (r != QERR_SUCCESS) {
         NRF_LOG_ERROR("uwb: uwbmac_start failed (%d)", r);
         goto err_deinit;
     }
 
+    STEP("pre start_session");
     r = fira_helper_start_session(&m_fira_ctx, m_session_handle);
     if (r != QERR_SUCCESS) {
         NRF_LOG_ERROR("uwb: start_session failed (%d)", r);
@@ -362,9 +375,11 @@ static int fira_session_start(void)
         goto err_deinit;
     }
 
+    STEP("post start_session (ranging active)");
     m_ranging_active = true;
     NRF_LOG_INFO("uwb: ranging started (session %u, ch %u)",
                  m_session_id, m_fira_config.Channel_Number);
+    NRF_LOG_FLUSH();
     return 0;
 
 err_deinit:
@@ -493,9 +508,19 @@ int uwb_port_stop(void)
     return ret;
 }
 
+/* Defined in qosal_shim.c — drains deferred MAC work in thread context. */
+extern bool qworkqueue_run_pending(void);
+
 bool uwb_port_poll(void)
 {
     bool did_work = false;
+
+    /* Run any MAC work the stack deferred (replaces the old inline execution
+     * inside qworkqueue_schedule_work). Must run every iteration so ranging
+     * rounds and event processing make progress. */
+    if (qworkqueue_run_pending()) {
+        did_work = true;
+    }
 
     if (m_start_pending) {
         m_start_pending = false;
@@ -516,6 +541,11 @@ bool uwb_port_poll(void)
 
     /* Process pending uwbmac events (IRQ-driven ranging rounds). */
     if (m_ranging_active && m_uwbmac_ctx) {
+        static bool first_poll = true;
+        if (first_poll) {
+            first_poll = false;
+            STEP("first uwbmac_poll_events after ranging start");
+        }
         enum qerr r = uwbmac_poll_events(m_uwbmac_ctx, 0);
         if (r == QERR_SUCCESS) {
             did_work = true;

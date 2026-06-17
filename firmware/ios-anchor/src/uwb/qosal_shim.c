@@ -23,10 +23,17 @@
 #include <string.h>
 
 #include "nrf_log.h"
+#include "nrf_log_ctrl.h"
 
 /* ---- qerr ---- */
 
 #include "qerr.h"
+
+/* Deferred workqueue drain (defined below). Pumped from the main loop via
+ * uwb_port_poll(), and cooperatively from blocking waits so a "schedule then
+ * wait" sequence still completes without running handlers inline/recursively.
+ * Returns true if any work ran. */
+bool qworkqueue_run_pending(void);
 
 enum qerr qerr_convert_os_to_qerr(int error)
 {
@@ -166,6 +173,14 @@ enum qerr qsignal_raise(struct qsignal *sig, int value)
 enum qerr qsignal_wait(struct qsignal *sig, int *value, uint32_t timeout_ms)
 {
     (void)timeout_ms;
+    /* Cooperatively run pending work until the signal is raised or there is no
+     * more work to run. In the FreeRTOS build a worker task would complete the
+     * awaited work concurrently; here we pump it from the waiting context. */
+    for (int spin = 0; spin < 64 && !sig->raised; spin++) {
+        if (!qworkqueue_run_pending()) {
+            break;
+        }
+    }
     if (sig->raised) {
         sig->raised = false;
         if (value) *value = sig->value;
@@ -350,26 +365,40 @@ void qirq_unlock(unsigned int key)
     __set_BASEPRI(key);
 }
 
-/* ---- qworkqueue ----
+/* ---- qworkqueue (deferred) ----
  * Real API (qosal/include/qworkqueue.h):
  *   struct qworkqueue *qworkqueue_init(qwork_func handler, void *priv);
  *   enum qerr qworkqueue_schedule_work(struct qworkqueue *wq);
  *   enum qerr qworkqueue_cancel_work(struct qworkqueue *wq);
- * The earlier stub had the WRONG signatures (treated arg0 as a struct
- * pointer), so the stack's qworkqueue_init(handler, priv) call wrote through
- * the handler function pointer -> unaligned write to read-only flash ->
- * HardFault during mcps802154_alloc_llhw. Bare-metal: no task — schedule runs
- * the handler inline; handles come from a small static pool (no qfree). */
+ *
+ * FreeRTOS model: schedule_work posts to a worker TASK that runs the handler
+ * LATER, in its own context, after schedule_work returns. The earlier
+ * bare-metal version ran the handler INLINE inside schedule_work — so any work
+ * item that scheduled more work recursed on the caller's stack. During
+ * uwbmac_start that nested deep enough to corrupt RAM and trip a SoftDevice
+ * assert (NRF_FAULT_ID_SD_ASSERT), resetting the board the instant ranging
+ * started.
+ *
+ * Now: schedule_work only marks the item pending. qworkqueue_run_pending()
+ * drains pending items ITERATIVELY (not recursively) and is called from the
+ * main loop (uwb_port_poll) and cooperatively from blocking waits. A depth
+ * guard bounds any nesting that a cooperative wait introduces, so the stack
+ * can never run away the way the inline version did. */
 typedef void (*qwork_func)(void *arg);
 
 struct qworkqueue {
-    qwork_func handler;
-    void      *priv;
-    bool       in_use;
+    qwork_func    handler;
+    void         *priv;
+    bool          in_use;
+    volatile bool pending;
 };
 
-#define QWQ_POOL_SIZE 8
+#define QWQ_POOL_SIZE  16
+#define QWQ_MAX_DEPTH  4   /* bound cooperative-wait nesting */
+#define QWQ_MAX_PASSES 16  /* per drain, before yielding back to the loop */
 static struct qworkqueue s_wq_pool[QWQ_POOL_SIZE];
+static int      s_wq_depth;
+static uint32_t s_wq_runs; /* diagnostic: total handler invocations */
 
 struct qworkqueue *qworkqueue_init(qwork_func handler, void *priv)
 {
@@ -378,9 +407,13 @@ struct qworkqueue *qworkqueue_init(qwork_func handler, void *priv)
             s_wq_pool[i].handler = handler;
             s_wq_pool[i].priv = priv;
             s_wq_pool[i].in_use = true;
+            s_wq_pool[i].pending = false;
+            NRF_LOG_INFO("wq: init slot %d", i);
+            NRF_LOG_FLUSH();
             return &s_wq_pool[i];
         }
     }
+    NRF_LOG_ERROR("wq: pool exhausted (>%d)", QWQ_POOL_SIZE);
     return NULL;
 }
 
@@ -389,14 +422,47 @@ enum qerr qworkqueue_schedule_work(struct qworkqueue *wq)
     if (!wq || !wq->handler) {
         return QERR_EINVAL;
     }
-    wq->handler(wq->priv); /* bare-metal: run inline */
+    wq->pending = true; /* deferred: run from qworkqueue_run_pending() */
     return QERR_SUCCESS;
+}
+
+bool qworkqueue_run_pending(void)
+{
+    if (s_wq_depth >= QWQ_MAX_DEPTH) {
+        return false; /* don't recurse without bound */
+    }
+    s_wq_depth++;
+
+    bool ran_any = false;
+    for (int pass = 0; pass < QWQ_MAX_PASSES; pass++) {
+        bool ran_this_pass = false;
+        for (int i = 0; i < QWQ_POOL_SIZE; i++) {
+            if (s_wq_pool[i].in_use && s_wq_pool[i].pending) {
+                s_wq_pool[i].pending = false;
+                if (s_wq_runs < 60) {
+                    NRF_LOG_INFO("wq: run slot %d (#%u, depth %d)",
+                                 i, s_wq_runs, s_wq_depth);
+                    NRF_LOG_FLUSH();
+                }
+                s_wq_runs++;
+                s_wq_pool[i].handler(s_wq_pool[i].priv);
+                ran_this_pass = true;
+                ran_any = true;
+            }
+        }
+        if (!ran_this_pass) {
+            break;
+        }
+    }
+
+    s_wq_depth--;
+    return ran_any;
 }
 
 enum qerr qworkqueue_cancel_work(struct qworkqueue *wq)
 {
     if (wq) {
-        wq->in_use = false;
+        wq->pending = false;
     }
     return QERR_SUCCESS;
 }

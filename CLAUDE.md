@@ -50,9 +50,19 @@ fixed (see `firmware/patches/README.md` for the SWD traces):
    shim to match the real API.
 Also: qmalloc heap 8K→50K (matches Qorvo), a real HardFault_Handler in
 main.c that captures the fault frame to globals (g_fault/g_cfsr) for SWD,
-and the qspi.c END-poll patch (now belt-and-suspenders). **Next: verify
-actual NI ranging with the iPhone (needs the Mac app); confirm the
-"QANI backend initialised" log over RTT.** Board currently holds QANI.
+and the qspi.c END-poll patch (now belt-and-suspenders). Board holds QANI.
+
+**Blocker (2026-06-17): firmware resets when ranging starts.** First
+end-to-end test: the iOS NI handshake fully completes (`init=cfgRx=sess=shr=
+conf=1`), the anchor enters RANGING (one blue blink), then the **SoftDevice
+asserts** (`NRF_FAULT_ID_SD_ASSERT`) inside `uwbmac_start()` and the watchdog
+reboots. Reproduces even with no BLE connection, so it's a SoftDevice/UWB-MAC
+coexistence problem in the bare-metal QOSAL port, not BLE timing. Ruled out:
+IRQ priorities, all SD-reserved peripherals, IRQ masking, stack overflow,
+build config, the workqueue model (deferring it didn't help). Full diagnosis
++ recommended fix (port QANI to FreeRTOS, Qorvo's supported SD-coexistence
+model) in `firmware/patches/README.md`. In-tree diagnostic changes:
+`STEP()` logging + deferred workqueue in qosal_shim.c / uwb_port_qani.c.
 
 iOS app (`ios/InZone/`, xcodegen) is feature-complete for first hardware
 tests: BLE scan/connect, round-robin NI ranging (2-session cap), zone

@@ -153,3 +153,95 @@ SDK/.../Binaries/DWM3001CDK/DWM3001CDK-CLI-FreeRTOS.hex --chiperase --reset`
 (then restore ours: rebuild stub/qani + flash SoftDevice + app). To drive
 the Qorvo CLI interactively, plug a cable into the board's nRF USB
 connector — a new COM port appears for it.
+
+## OPEN: SoftDevice assert in uwbmac_start when ranging starts (2026-06-17)
+
+End-to-end NI ranging was attempted for the first time (iOS app built and
+installed via TestFlight). **The iOS-side handshake is fully working** — the
+phone completes INITIALIZE → accessory config → shareable config → CONFIGURE
+(Live→Debug shows `init=1 cfgRx=1 sess=1 shr=1 conf=1`). The fix on the app
+side was using `NINearbyAccessoryConfiguration(data:)` instead of the iOS 16
+`init(accessoryData:bluetoothPeerIdentifier:)` variant — Qorvo's niq emits a
+v1.0 ("Developer Preview") accessory config, which the `accessoryData:`
+initializer silently rejects (no shareable config, no error).
+
+**The firmware crashes the instant ranging starts.** The anchor receives the
+CONFIGURE, enters the RANGING LED state (one blue blink), then resets.
+
+### Root cause located (but not yet fixed)
+
+Caught live over SWD with GDB (break at `app_error_fault_handler`):
+
+- It is a **SoftDevice assert**: `id=1` (`NRF_FAULT_ID_SD_ASSERT`), `pc` inside
+  the SoftDevice flash (`0x12214` in S113 7.2.0), `CFSR=0` (no bus/usage fault).
+  The board reboots because the assert handler spins with IRQs off and the 8 s
+  watchdog fires (it is *not* hitting our HardFault_Handler).
+- Flushed step-logging through `fira_session_start` (the `STEP()` macro in
+  `uwb_port_qani.c`) pins the trigger to **`uwbmac_start()`** — `pre uwbmac_start`
+  is the last marker; `pre start_session` never prints.
+- Reproduces **with no BLE connection at all** — a diagnostic build that
+  auto-starts ranging 4 s after boot, phone never connected, asserts every
+  cycle. So it is **not** a BLE radio-timing issue; merely having the
+  SoftDevice *enabled* is incompatible with the MAC bring-up.
+- GDB stack walk at the assert: MSP is **shallow** (~296 B used), so
+  `uwbmac_start` had already largely unwound — the assert is **asynchronous**,
+  firing from the MAC's freshly-enabled interrupt processing just after
+  bring-up. The most recent (stale) frame was **`ocrypto_aes_ccm_decrypt`**
+  (the secure-ranging STS crypto), so the STS path is active at the failure.
+
+### Ruled out (with evidence)
+
+- **Interrupt priorities** — all SoftDevice-safe: UWB SPI=3, GPIOTE=6, RTC2=7,
+  app_timer=6. None are SD-reserved (0/1/4).
+- **Every SD-reserved peripheral** — disassembly scan for literal base
+  addresses found ZERO access to ECB, CCM/AAR, RADIO, TIMER0, RTC0, PPI, RNG on
+  the ranging path. TEMP is touched only in `SystemInit` (boot errata, before
+  the SoftDevice is enabled). The DW3110 reads its *own* temperature over SPI
+  (`dwt_readtempvbat`), not `NRF_TEMP`.
+- **Interrupt masking** — only 6 `cpsid`/`cpsie` sites in the whole image, all
+  in `app_error_fault_handler` + `app_util_critical_region_*`. The precompiled
+  `uwbmac` bundle has **no** PRIMASK at all; `qirq_lock` uses BASEPRI (≥5).
+- **Build config** — `SOFTDEVICE_PRESENT`, `S113`, `RTC2_ENABLED` all defined,
+  so SDK `CRITICAL_REGION_ENTER` uses the SD-aware `sd_nvic` path.
+- **Stack overflow** — stack was shallow at the assert, not deep.
+- **The workqueue / threading model** — see below; disproven.
+- **Crypto glue** — `mcps_crypto_stub.c`'s CCM call matches nrf_oberon's
+  signature exactly (pt, tag/tag_len, ct/ct_len, key/size, nonce(13)/n_len,
+  aa/aa_len); oberon is pure software.
+
+### Attempted fix (option 2): deferred workqueue — did NOT fix it
+
+`qworkqueue_schedule_work` used to run the handler **inline**, so MAC work that
+scheduled more work recursed on the caller's stack — the hypothesis was that
+this recursed during `uwbmac_start`. Reworked it (in tree) to defer: schedule
+marks the item pending; `qworkqueue_run_pending()` drains them iteratively from
+the main loop (`uwb_port_poll`) and cooperatively from blocking waits
+(`qsignal_wait`), with a depth guard. This matches the FreeRTOS worker-task
+model and is a reasonable keeper, **but it did not fix the assert** — and the
+logs proved why: only 2 workqueues are ever created and **zero run** before the
+assert, so the workqueue was never on the crash path. (Changes live in
+`qosal_shim.c` + `uwb_port_qani.c`, alongside the `STEP()` diagnostics in
+`uwb_port_qani.c`.)
+
+### Assessment & next step
+
+This is a subtle SoftDevice timing/protocol assertion (or memory corruption)
+deep inside the precompiled UWB MAC's interrupt-driven bring-up — not
+resolvable from outside without SoftDevice symbols. It is exactly the class of
+issue the **FreeRTOS** integration is built to handle: Qorvo's QANI reference
+for the DWM3001CDK *does* run with a SoftDevice (app at flash `0x1c000`, RAM
+reserved for the SD, `#ifdef SOFTDEVICE_PRESENT`) — **but on FreeRTOS, not the
+bare-metal QOSAL shims**. The cheap, high-yield diagnostics are exhausted.
+
+Recommended path forward, in order:
+1. **Port the QANI build to FreeRTOS** (Qorvo's supported SD-coexistence model).
+   Highest effort, highest probability of working.
+2. **Nordic DevZone**: ask them to decode the S113 7.2.0 assert at `pc=0x12214`
+   — that maps to the specific violated constraint and may yield a small fix.
+3. A DWT data-watchpoint on the SoftDevice RAM boundary (~`0x20002600`) to catch
+   a wild write, if the memory-corruption angle is pursued before FreeRTOS.
+
+How to reproduce the capture: build+flash QANI, run `JLinkRTTLogger` (RTT chan
+0) for the `step:` markers, or `JLinkGDBServerCL` + `arm-none-eabi-gdb` with a
+breakpoint at `app_error_fault_handler` and `x/320xw $msp`, then resolve the
+app-range (`0x1c000`–`0x48738`) return addresses with `addr2line`.
