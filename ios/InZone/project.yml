@@ -1,6 +1,6 @@
 name: InZone
 options:
-  bundleIdPrefix: com.inzone
+  bundleIdPrefix: com.inzoned
   deploymentTarget:
     iOS: "16.0"
   generateEmptyDirectories: true
@@ -21,7 +21,7 @@ targets:
         INFOPLIST_FILE: InZone/Info.plist
         CODE_SIGN_ENTITLEMENTS: InZone/InZone.entitlements
         CODE_SIGN_STYLE: Automatic
-        PRODUCT_BUNDLE_IDENTIFIER: com.inzone.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.inzoned.app
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
   InZoneTests:
