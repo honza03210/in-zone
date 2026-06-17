@@ -194,6 +194,10 @@ struct LiveView: View {
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("accessory cfg = \(niDiag.lastConfigLen) bytes\(niDiag.stalled ? "  NI STALLED (no shareable, no error)" : "")")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(niDiag.stalled ? .orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let e = niDiag.lastError {
                 VStack(alignment: .leading, spacing: 2) {

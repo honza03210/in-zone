@@ -1,12 +1,10 @@
 import Foundation
 import NearbyInteraction
 
-/// Surfaces Nearby Interaction availability and the last session error so the
-/// UI can show *why* ranging isn't working. The most important case for a
-/// sideloaded / free-provisioned build: the device has the UWB hardware
-/// (`supported == true`) but the `com.apple.developer.nearby-interaction.accessory`
-/// entitlement isn't granted, so starting an accessory session fails at
-/// runtime — that failure shows up here as `lastError`.
+/// Surfaces Nearby Interaction availability, the handshake progress, and the
+/// last session error so the UI can show *why* ranging isn't working.
+/// (Nearby Interaction needs no entitlement — it's gated by the usage-string
+/// permission only — so a stall here is a runtime/protocol issue, not signing.)
 final class NIDiagnostics: ObservableObject {
     static let shared = NIDiagnostics()
 
@@ -26,12 +24,21 @@ final class NIDiagnostics: ObservableObject {
     @Published private(set) var sessionStarted = 0
     @Published private(set) var shareableGenerated = 0
     @Published private(set) var configureSent = 0
+    /// Byte length of the most recent accessory-configuration blob handed to
+    /// NINearbyAccessoryConfiguration. A tiny value (≈19) means the BLE
+    /// notification was truncated; a sane Qorvo config is ~30+ bytes.
+    @Published private(set) var lastConfigLen = 0
+    /// Set when run() succeeded but NI produced no shareable config within the
+    /// watchdog window and reported no error — i.e. a silent NI stall.
+    @Published private(set) var stalled = false
 
     func noteInitSent()    { DispatchQueue.main.async { self.initSent += 1 } }
     func noteCfgReceived() { DispatchQueue.main.async { self.cfgReceived += 1 } }
     func noteSessionStarted()    { DispatchQueue.main.async { self.sessionStarted += 1 } }
-    func noteShareable()   { DispatchQueue.main.async { self.shareableGenerated += 1 } }
+    func noteShareable()   { DispatchQueue.main.async { self.shareableGenerated += 1; self.stalled = false } }
     func noteConfigureSent() { DispatchQueue.main.async { self.configureSent += 1 } }
+    func noteConfigLen(_ n: Int) { DispatchQueue.main.async { self.lastConfigLen = n } }
+    func noteStall()       { DispatchQueue.main.async { self.stalled = true } }
 
     private init() {
         // isSupported reports the hardware capability (U1/U2 chip present).
@@ -53,16 +60,19 @@ final class NIDiagnostics: ObservableObject {
     }
 
     /// True when there's something the user should be told about.
-    var isProblem: Bool { !supported || (lastError != nil && !everRanged) }
+    var isProblem: Bool { !supported || stalled || (lastError != nil && !everRanged) }
 
     var statusText: String {
         if !supported {
-            return "NearbyInteraction is NOT accessible: this device's hardware doesn't support it (or the app lacks the capability)."
+            return "NearbyInteraction is NOT accessible: this device's hardware doesn't support it."
         }
         if let e = lastError, !everRanged {
-            return "NearbyInteraction not accessible — session error: \(e). "
-                + "On a free-account/sideloaded build this usually means the "
-                + "nearby-interaction accessory entitlement isn't granted."
+            return "NearbyInteraction session error: \(e)"
+        }
+        if stalled {
+            return "NI accepted the session but never produced a shareable config "
+                + "and reported no error (accessory cfg = \(lastConfigLen) bytes). "
+                + "Likely a malformed/truncated accessory config from the anchor."
         }
         if everRanged {
             return "NearbyInteraction OK (ranging has worked)."

@@ -10,6 +10,7 @@ class NISessionManager: NSObject {
     var onSessionInvalidated: (() -> Void)?
 
     private var session: NISession?
+    private var generatedShareable = false
     private let log = Logger(subsystem: "com.inzone", category: "NI")
 
     init(anchorPeripheralId: UUID) {
@@ -29,7 +30,19 @@ class NISessionManager: NSObject {
             )
             s.run(config)
             NIDiagnostics.shared.noteSessionStarted()
-            log.info("NI session running for \(self.anchorPeripheralId)")
+            NIDiagnostics.shared.noteConfigLen(accessoryConfigData.count)
+            log.info("NI session running for \(self.anchorPeripheralId), accessoryData=\(accessoryConfigData.count) bytes")
+
+            // Watchdog: for an accessory session, NI normally calls back with the
+            // shareable config within a fraction of a second. If nothing happens
+            // (no callback, no invalidation error) we surface a "silent stall" so
+            // the on-device debug panel shows it — there are no Console logs to
+            // read on this setup.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, self.session === s, !self.generatedShareable else { return }
+                self.log.error("NI produced no shareable config 3s after run() and did not error")
+                NIDiagnostics.shared.noteStall()
+            }
         } catch {
             log.error("NI config failed: \(error)")
             NIDiagnostics.shared.report("config: \(error.localizedDescription)")
@@ -53,6 +66,7 @@ extension NISessionManager: NISessionDelegate {
                  didGenerateShareableConfigurationData data: Data,
                  for object: NINearbyObject) {
         log.info("Shareable config ready (\(data.count) bytes)")
+        generatedShareable = true
         NIDiagnostics.shared.noteShareable()
         onShareableConfig?(data)
     }
