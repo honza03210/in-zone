@@ -65,3 +65,40 @@ See [docs/SPECIFICATION.md](../docs/SPECIFICATION.md) for the full system design
 XcodeGen, regenerates the project, and runs the full unit-test suite on the iOS
 Simulator (`xcodebuild test`). The `.xcresult` bundle is uploaded as a build
 artifact. No code signing is required — tests run unsigned on the simulator.
+
+The same workflow also builds an **unsigned `.ipa`** (artifact `InZone-unsigned-ipa`)
+on pushes to `main`, for sideloading via AltStore/SideStore with a free Apple ID.
+Note: real UWB ranging needs the **Nearby Interaction** entitlement, which a free
+account can't grant — the app installs and the BLE/handshake works, but the NI
+session stalls (visible in the Live → Debug panel as `sess=1, shr=0`). For real
+ranging use the TestFlight path below.
+
+## TestFlight (real ranging — needs a paid Apple Developer account)
+
+[`.github/workflows/ios-testflight.yml`](../.github/workflows/ios-testflight.yml)
+archives a properly signed build and uploads it to TestFlight, entitlement and
+all — no Mac, no cable, no AltStore. Install it over the air via the TestFlight
+app; internal testing needs no App Review.
+
+One-time setup:
+1. Join the Apple Developer Program ($99/yr).
+2. App Store Connect → create the app record with bundle id `com.inzone.app`.
+3. App Store Connect → Users and Access → Integrations → App Store Connect API →
+   generate a key (Developer/App Manager access). Download the `.p8` **once**;
+   note its **Key ID** and the **Issuer ID**.
+4. Find your **Team ID** (10 chars) on the Membership page.
+5. Repo → Settings → Secrets and variables → Actions → add:
+   - `ASC_KEY_ID` — the key id
+   - `ASC_ISSUER_ID` — the issuer id
+   - `ASC_KEY_P8` — the full contents of the `.p8` file (paste as-is)
+   - `APPLE_TEAM_ID` — the team id
+6. Actions tab → **iOS TestFlight** → **Run workflow**. The build number is set
+   from the run number automatically, so each run is uploadable.
+7. After App Store Connect finishes processing (~5–30 min), open the TestFlight
+   app on the iPhone (add yourself as an internal tester) and install. Builds
+   last 90 days.
+
+Signing is automatic via the API key (`xcodebuild -allowProvisioningUpdates`),
+which also registers the Nearby Interaction capability on the App ID from the
+app's entitlement — so there are no certificates or provisioning profiles to
+manage by hand.
