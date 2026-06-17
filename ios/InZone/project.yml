@@ -24,6 +24,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.inzoned.app
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+        # iPhone only — keeps App Store validation from demanding iPad icons
+        # and the full iPad-multitasking orientation set. (The project-level
+        # value above wasn't winning, so pin it on the target too.)
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   InZoneTests:
     type: bundle.unit-test
     platform: iOS
