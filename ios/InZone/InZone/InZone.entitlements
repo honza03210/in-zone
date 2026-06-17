@@ -2,7 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>com.apple.developer.nearby-interaction</key>
-    <true/>
+    <!-- No special entitlements. Nearby Interaction is NOT a provisionable
+         capability — it is gated by NSNearbyInteractionUsageDescription in
+         Info.plist plus the runtime permission prompt (Xcode rejects
+         com.apple.developer.nearby-interaction* as "not a valid entitlement").
+         CoreBluetooth likewise needs only its usage string. -->
 </dict>
 </plist>
