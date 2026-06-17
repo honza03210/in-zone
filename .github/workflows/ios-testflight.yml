@@ -13,7 +13,7 @@ name: iOS TestFlight
 #   APPLE_TEAM_ID   10-char Apple Developer team id
 #
 # One-time setup on Apple's side:
-#   - Create the app record in App Store Connect with bundle id com.inzone.app
+#   - Create the app record in App Store Connect with bundle id com.inzoned.app
 #   - The Nearby Interaction capability is auto-registered on the App ID by
 #     -allowProvisioningUpdates from the app's entitlement; no manual step
 #     needed (but you can enable it on the App ID explicitly if you prefer).
