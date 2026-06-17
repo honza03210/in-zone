@@ -102,8 +102,6 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/InZone.xcarchive" \
             -exportOptionsPlist "$PLIST" \
-            -allowProvisioningUpdates \
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            | xcbeautify
