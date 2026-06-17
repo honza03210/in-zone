@@ -24,10 +24,14 @@ class NISessionManager: NSObject {
         session = s
 
         do {
-            let config = try NINearbyAccessoryConfiguration(
-                accessoryData: accessoryConfigData,
-                bluetoothPeerIdentifier: anchorPeripheralId
-            )
+            // Use the basic accessory-data initializer (iOS 14+). This is the
+            // one Qorvo's niq accessory-config targets — it mirrors Apple's
+            // NINearbyAccessorySample. The iOS 16 accessoryData:
+            // bluetoothPeerIdentifier: variant expects the newer extended /
+            // capability TLVs; given a v1.0 Qorvo config it parses the header
+            // (no throw) but silently emits no shareable config — the exact
+            // stall we hit (sess=1, shr=0, no error).
+            let config = try NINearbyAccessoryConfiguration(data: accessoryConfigData)
             s.run(config)
             NIDiagnostics.shared.noteSessionStarted()
             NIDiagnostics.shared.noteConfigLen(accessoryConfigData.count)
