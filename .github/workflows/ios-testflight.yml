@@ -1,3 +1,5 @@
+name: iOS TestFlight
+
 # Manual only. Run from the Actions tab once the App Store Connect secrets are
 # set (requires a paid Apple Developer account). It archives a properly signed
 # build and uploads it to TestFlight; install it over the air via the TestFlight
@@ -15,8 +17,6 @@
 #   - The Nearby Interaction capability is auto-registered on the App ID by
 #     -allowProvisioningUpdates from the app's entitlement; no manual step
 #     needed (but you can enable it on the App ID explicitly if you prefer).
-name: iOS TestFlight
-
 on:
   workflow_dispatch:
 
@@ -31,7 +31,6 @@ jobs:
     defaults:
       run:
         working-directory: ios/InZone
-
     steps:
       - uses: actions/checkout@v5
 
@@ -54,7 +53,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: |
           if [ -z "$ASC_KEY_P8" ] || [ -z "$ASC_KEY_ID" ]; then
-            echo "::error::Missing ASC_KEY_P8 / ASC_KEY_ID secrets"
+            echo "::error::Missing ASC_KEY_P8 / ASC_KEY_ID secrets — see this workflow's header."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/keys"
@@ -90,9 +89,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -o pipefail
-
           PLIST="$RUNNER_TEMP/ExportOptions.plist"
-
           printf '%s\n' \
             '<?xml version="1.0" encoding="UTF-8"?>' \
             '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
@@ -102,10 +99,10 @@ jobs:
             "<key>teamID</key><string>${TEAM_ID}</string>" \
             '<key>signingStyle</key><string>automatic</string>' \
             '</dict></plist>' > "$PLIST"
-
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/InZone.xcarchive" \
             -exportOptionsPlist "$PLIST" \
+            -allowProvisioningUpdates \
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
