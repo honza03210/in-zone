@@ -245,3 +245,49 @@ How to reproduce the capture: build+flash QANI, run `JLinkRTTLogger` (RTT chan
 0) for the `step:` markers, or `JLinkGDBServerCL` + `arm-none-eabi-gdb` with a
 breakpoint at `app_error_fault_handler` and `x/320xw $msp`, then resolve the
 app-range (`0x1c000`–`0x48738`) return addresses with `addr2line`.
+
+## FreeRTOS port done — assert PERSISTS, threading was not the cause (2026-06-18)
+
+Ported the QANI build to FreeRTOS (branch `freertos-port`, commit "port QANI
+build to FreeRTOS"): real QOSAL FreeRTOS layer (the bundle is the `*_rtos_*`
+variant), nRF52 RTC tick port, `nrf_sdh_freertos`, `app_timer_freertos`, the
+session start/stop moved into a qsignal-driven `uwb_task`, MAC in its own task.
+It **boots, advertises, and SD/UWB/FreeRTOS coexist cleanly at idle** — but
+ranging still dies at `step: pre uwbmac_start` exactly as before. So the
+SoftDevice assert is **independent of the threading model**.
+
+Key facts established this round:
+- **Coexistence is proven possible**: Qorvo's QANI for DWM3001CDK runs S113 +
+  FreeRTOS + UWB (`USE_SOFTDEVICE 1`, `-DS113`, links the SoftDevice). So this
+  is a *config/integration difference* from their working reference, not a
+  fundamental S113+UWB incompatibility.
+- The assert is **asynchronous in the MAC's own internal task**: `uwbmac_start`
+  posts a start command and returns; `uwb_task` is then blocked at its outer
+  `qsignal_wait` (confirmed by dumping its stack — 99% `0xa5a5a5a5` unused).
+  The bring-up + assert happen in the uwbmac task, with the STS AES-CCM crypto
+  (`ocrypto_aes_ccm_decrypt`) active nearby.
+
+Ruled out by direct test this round (in addition to the earlier list):
+- **Threading model** — FreeRTOS port didn't change the failure.
+- **HFXO/HFCLK** — added `sd_clock_hfclk_request` (via `nrf_drv_clock`) AFTER
+  SD-enable so the SD keeps the crystal on (Qorvo does the equivalent). No
+  change. (Requesting before SD-enable also no change.)
+- **Stack overflow** — `configCHECK_FOR_STACK_OVERFLOW=2` never fired.
+- **Heap exhaustion** — `configUSE_MALLOC_FAILED_HOOK` never fired.
+- **FreeRTOS asserts during ranging** — `configASSERT` (now always on) clean
+  during the start sequence. (It did catch a real *init-ordering* bug:
+  `nrf_sdh_freertos`'s `SD_EVT_IRQHandler` notified a NULL task handle because
+  the SD was enabled before `nrf_sdh_freertos_init`; fixed by creating the SD
+  task first.)
+- **Build defines** — `CONFIG_CFG_MANAGER_VOLATILE_MODE` (l1_config RAM-only,
+  no `sd_flash` during ranging), `QANI_BUILD`, `USE_NIQ` all already set and
+  match Qorvo. SoftDevice clock config (LF src/accuracy) matches too.
+
+Remaining viable leads (none cheap):
+1. **Nordic DevZone**: decode the S113 7.2.0 assert at `pc=0x12214` — the
+   definitive answer; we cannot map it without SoftDevice symbols.
+2. **Deep source diff** of the platform/MCPS/llhw bring-up (`fira_uwb_mcps_init`
+   and what Qorvo's QANI does between `niq_init` and ranging) vs ours — the MAC
+   state at `uwbmac_start` is set up there.
+3. Trace the **uwbmac task's** internal stack at the assert (needs FreeRTOS
+   thread awareness / TCB walking in GDB) to find the exact offending op.
