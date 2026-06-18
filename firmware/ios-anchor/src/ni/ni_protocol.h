@@ -31,6 +31,13 @@ typedef enum {
  * Returns false if it could not be queued (caller may retry). */
 typedef bool (*ni_tx_fn_t)(const uint8_t *data, uint16_t len);
 
+/* Initialize the UWB stack (uwb_port_init -> fira_uwb_mcps_init + niq_init).
+ * MUST be called BEFORE the SoftDevice is enabled: the UWB stack does its
+ * calibration + flash transactions during init, which Qorvo's reference does
+ * with the SoftDevice off (direct NVMC, no sd_flash coordination). */
+void ni_protocol_uwb_init(void);
+
+/* Wire the BLE transport; call after the BLE stack is up. */
 void ni_protocol_init(ni_tx_fn_t tx);
 
 /* Feed a message received from the phone. */

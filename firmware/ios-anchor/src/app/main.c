@@ -182,6 +182,14 @@ int main(void)
     NRF_LOG_INFO("In-Zone anchor fw (FreeRTOS), id=%u label=%s",
                  anchor_id_get(), anchor_label_get());
 
+    /* Bring up the UWB stack BEFORE the SoftDevice is enabled, so its
+     * calibration + flash transactions run against direct NVMC (no sd_flash
+     * coordination). This mirrors Qorvo's QANI, which calls fira_uwb_mcps_init
+     * from CreateQaniTask() before ble_init() — "to handle calibration and
+     * flash transactions before softdevice is up". (Creates the uwb_task too;
+     * it runs once the scheduler starts.) */
+    ni_protocol_uwb_init();
+
     /* Create the SoftDevice FreeRTOS task FIRST, so m_softdevice_task is valid
      * before the SD is enabled — otherwise the first SD_EVT interrupt (raised
      * during ble_stack_init) calls vTaskNotifyGiveFromISR(NULL). The task only
@@ -230,6 +238,7 @@ int main(void)
     NRF_LOG_INFO("In-Zone anchor fw, id=%u label=%s",
                  anchor_id_get(), anchor_label_get());
 
+    ni_protocol_uwb_init(); /* UWB stack up before the SoftDevice (see FreeRTOS path) */
     ble_stack_init(on_conn_change);
     ble_stack_advertising_start();
     leds_set_state(LEDS_STATE_ADVERTISING);

@@ -65,11 +65,15 @@ static void handle_initialize(void)
     NRF_LOG_INFO("ni: sent accessory config (%u bytes)", len);
 }
 
+void ni_protocol_uwb_init(void)
+{
+    uwb_port_init(uwb_evt_handler);
+}
+
 void ni_protocol_init(ni_tx_fn_t tx)
 {
     m_tx = tx;
     m_state = NI_STATE_IDLE;
-    uwb_port_init(uwb_evt_handler);
 }
 
 void ni_protocol_handle_rx(const uint8_t *data, uint16_t len)
