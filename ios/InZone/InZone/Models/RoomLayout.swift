@@ -13,18 +13,23 @@ struct RoomLayout: Codable, Equatable {
     var height: Float
     var anchors: [AnchorPlacement]
 
-    init(width: Float = 5.0, height: Float = 4.0, anchors: [AnchorPlacement]? = nil) {
+    init(width: Float = 6.0, height: Float = 5.0, anchors: [AnchorPlacement]? = nil) {
         self.width = width
         self.height = height
-        self.anchors = anchors ?? Self.cornerAnchors(width: width, height: height)
+        self.anchors = anchors ?? Self.defaultAnchors(width: width, height: height)
     }
 
-    static func cornerAnchors(width: Float, height: Float) -> [AnchorPlacement] {
-        [
-            AnchorPlacement(id: 0, x: 0,     y: 0,      label: "door"),
-            AnchorPlacement(id: 1, x: width, y: 0,      label: "window"),
-            AnchorPlacement(id: 2, x: width, y: height, label: "desk"),
-            AnchorPlacement(id: 3, x: 0,     y: height, label: "bed"),
+    /// Default placement: anchors set slightly IN from the walls, not jammed
+    /// into the geometric corners — real anchors are mounted within the room.
+    /// The user drags them to their actual spots in Room Setup.
+    static func defaultAnchors(width: Float, height: Float) -> [AnchorPlacement] {
+        let mx = min(0.5, width * 0.1)
+        let my = min(0.5, height * 0.1)
+        return [
+            AnchorPlacement(id: 0, x: mx,          y: my,          label: "A0"),
+            AnchorPlacement(id: 1, x: width - mx,  y: my,          label: "A1"),
+            AnchorPlacement(id: 2, x: width - mx,  y: height - my, label: "A2"),
+            AnchorPlacement(id: 3, x: mx,          y: height - my, label: "A3"),
         ]
     }
 

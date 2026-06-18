@@ -266,8 +266,8 @@ struct RoomSetupView: View {
     }
 
     private func resetDefaults() {
-        width = "5.0"
-        height = "4.0"
-        anchors = RoomLayout.cornerAnchors(width: 5, height: 4)
+        width = "6.0"
+        height = "5.0"
+        anchors = RoomLayout.defaultAnchors(width: 6, height: 5)
     }
 }
