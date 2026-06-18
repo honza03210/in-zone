@@ -1,17 +1,20 @@
 import CoreBluetooth
 
 enum BLE {
-    static let transportService = CBUUID(string: "49A70001-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let rxChar           = CBUUID(string: "49A70002-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let txChar           = CBUUID(string: "49A70003-9A91-4B5C-8E3F-2D1C7A6B5E40")
+    /* Qorvo Nearby Interaction Service (QNIS), as exposed by the stock
+     * DWM3001CDK-QANI-FreeRTOS firmware. 128-bit base 2E93xxxx-6A61-11ED-A1EB-
+     * 0242AC120002 (Nordic vendor base, 16-bit slot at bytes 12..13). */
+    static let transportService = CBUUID(string: "2E938FD0-6A61-11ED-A1EB-0242AC120002")
+    /* SEC: read-only, just-works secured — reading it triggers BLE pairing,
+     * which the QANI firmware expects before ranging. */
+    static let secChar          = CBUUID(string: "2E93941C-6A61-11ED-A1EB-0242AC120002")
+    /* RX: phone -> accessory (write / write-without-response). */
+    static let rxChar           = CBUUID(string: "2E93998A-6A61-11ED-A1EB-0242AC120002")
+    /* TX: accessory -> phone (notify). */
+    static let txChar           = CBUUID(string: "2E939AF2-6A61-11ED-A1EB-0242AC120002")
 
-    static let infoService      = CBUUID(string: "49A70010-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let anchorIdChar     = CBUUID(string: "49A70011-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let labelChar        = CBUUID(string: "49A70012-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let fwVersionChar    = CBUUID(string: "49A70013-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let modeChar         = CBUUID(string: "49A70014-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    static let identifyChar     = CBUUID(string: "49A70015-9A91-4B5C-8E3F-2D1C7A6B5E40")
-
+    /* Apple NI accessory protocol message ids (same as Qorvo's niq / our old
+     * firmware — only the BLE transport differs). */
     static let msgInitialize:      UInt8 = 0x0A
     static let msgConfigure:       UInt8 = 0x0B
     static let msgStop:            UInt8 = 0x0C

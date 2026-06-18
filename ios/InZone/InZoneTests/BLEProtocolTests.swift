@@ -86,22 +86,16 @@ final class BLEProtocolTests: XCTestCase {
 
     // MARK: - Firmware contract (UUIDs and message IDs)
 
+    // QNIS (Qorvo Nearby Interaction Service) exposed by the stock
+    // DWM3001CDK-QANI-FreeRTOS firmware.
     func testServiceUUIDs() {
-        XCTAssertEqual(BLE.transportService.uuidString, "49A70001-9A91-4B5C-8E3F-2D1C7A6B5E40")
-        XCTAssertEqual(BLE.infoService.uuidString,      "49A70010-9A91-4B5C-8E3F-2D1C7A6B5E40")
+        XCTAssertEqual(BLE.transportService.uuidString, "2E938FD0-6A61-11ED-A1EB-0242AC120002")
     }
 
     func testTransportCharacteristicUUIDs() {
-        XCTAssertEqual(BLE.rxChar.uuidString, "49A70002-9A91-4B5C-8E3F-2D1C7A6B5E40")
-        XCTAssertEqual(BLE.txChar.uuidString, "49A70003-9A91-4B5C-8E3F-2D1C7A6B5E40")
-    }
-
-    func testInfoCharacteristicUUIDs() {
-        XCTAssertEqual(BLE.anchorIdChar.uuidString,  "49A70011-9A91-4B5C-8E3F-2D1C7A6B5E40")
-        XCTAssertEqual(BLE.labelChar.uuidString,     "49A70012-9A91-4B5C-8E3F-2D1C7A6B5E40")
-        XCTAssertEqual(BLE.fwVersionChar.uuidString, "49A70013-9A91-4B5C-8E3F-2D1C7A6B5E40")
-        XCTAssertEqual(BLE.modeChar.uuidString,      "49A70014-9A91-4B5C-8E3F-2D1C7A6B5E40")
-        XCTAssertEqual(BLE.identifyChar.uuidString,  "49A70015-9A91-4B5C-8E3F-2D1C7A6B5E40")
+        XCTAssertEqual(BLE.rxChar.uuidString,  "2E93998A-6A61-11ED-A1EB-0242AC120002")
+        XCTAssertEqual(BLE.txChar.uuidString,  "2E939AF2-6A61-11ED-A1EB-0242AC120002")
+        XCTAssertEqual(BLE.secChar.uuidString, "2E93941C-6A61-11ED-A1EB-0242AC120002")
     }
 
     func testMessageIdConstants() {

@@ -12,19 +12,20 @@ class BLEManager: NSObject, ObservableObject {
     private var chars: [UUID: CharSet] = [:]
     private let log = Logger(subsystem: "com.inzone", category: "BLE")
 
+    // QANI firmware exposes no anchor-id characteristic, so we assign a small
+    // logical id to each board the first time we see it (stable within a run).
+    private var anchorIdMap: [UUID: UInt8] = [:]
+    private var nextAnchorId: UInt8 = 0
+
     var onAccessoryConfig: ((UUID, Data) -> Void)?
     var onUwbDidStart: ((UUID) -> Void)?
     var onUwbDidStop: ((UUID) -> Void)?
     var onDisconnect: ((UUID) -> Void)?
 
     struct CharSet {
-        var rx: CBCharacteristic?
-        var tx: CBCharacteristic?
-        var anchorId: CBCharacteristic?
-        var label: CBCharacteristic?
-        var fwVersion: CBCharacteristic?
-        var mode: CBCharacteristic?
-        var identify: CBCharacteristic?
+        var rx: CBCharacteristic?   // write: phone -> accessory
+        var tx: CBCharacteristic?   // notify: accessory -> phone
+        var sec: CBCharacteristic?  // read (just-works): triggers pairing
     }
 
     var bluetoothStateText: String {
@@ -90,9 +91,7 @@ class BLEManager: NSObject, ObservableObject {
     }
 
     func identify(_ anchorUUID: UUID, seconds: UInt8 = 5) {
-        guard let cs = chars[anchorUUID], let c = cs.identify,
-              let p = peripherals[anchorUUID] else { return }
-        p.writeValue(Data([seconds]), for: c, type: .withResponse)
+        // No identify characteristic on the QANI firmware; nothing to do.
     }
 
     private func send(to anchorUUID: UUID, data: Data) {
@@ -121,8 +120,21 @@ extension BLEManager: CBCentralManagerDelegate {
         let id = peripheral.identifier
         peripherals[id] = peripheral
 
+        // QANI advertises its full name (e.g. "DWM3001CDK (1A2B3C4D)") in the
+        // scan response. With no anchor-id characteristic, assign a small
+        // logical id per board on first sight.
+        let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
+            ?? peripheral.name ?? "DWM3001CDK"
+
         if anchors[id] == nil {
-            anchors[id] = Anchor(id: id, peripheralName: peripheral.name ?? "Unknown")
+            if anchorIdMap[id] == nil {
+                anchorIdMap[id] = nextAnchorId
+                nextAnchorId &+= 1
+            }
+            var a = Anchor(id: id, peripheralName: name)
+            a.anchorId = anchorIdMap[id] ?? 0
+            a.label = name
+            anchors[id] = a
         }
         anchors[id]?.rssi = RSSI.intValue
     }
@@ -131,7 +143,7 @@ extension BLEManager: CBCentralManagerDelegate {
         let id = peripheral.identifier
         peripheral.delegate = self
         anchors[id]?.state = .connected
-        peripheral.discoverServices([BLE.transportService, BLE.infoService])
+        peripheral.discoverServices([BLE.transportService])
         log.info("Connected to \(peripheral.name ?? "unknown")")
     }
 
@@ -171,24 +183,18 @@ extension BLEManager: CBPeripheralDelegate {
 
         for c in service.characteristics ?? [] {
             switch c.uuid {
-            case BLE.rxChar:        chars[id]?.rx = c
+            case BLE.rxChar:
+                chars[id]?.rx = c
             case BLE.txChar:
                 chars[id]?.tx = c
                 peripheral.setNotifyValue(true, for: c)
-            case BLE.anchorIdChar:
-                chars[id]?.anchorId = c
+            case BLE.secChar:
+                chars[id]?.sec = c
+                // Reading the just-works-secured characteristic triggers BLE
+                // pairing, which the QANI firmware expects before ranging.
                 peripheral.readValue(for: c)
-            case BLE.labelChar:
-                chars[id]?.label = c
-                peripheral.readValue(for: c)
-            case BLE.fwVersionChar:
-                chars[id]?.fwVersion = c
-                peripheral.readValue(for: c)
-            case BLE.modeChar:
-                chars[id]?.mode = c
-                peripheral.readValue(for: c)
-            case BLE.identifyChar:  chars[id]?.identify = c
-            default: break
+            default:
+                break
             }
         }
     }
@@ -199,17 +205,10 @@ extension BLEManager: CBPeripheralDelegate {
         guard let data = characteristic.value, !data.isEmpty else { return }
 
         switch characteristic.uuid {
-        case BLE.anchorIdChar:
-            anchors[id]?.anchorId = data[0]
-        case BLE.labelChar:
-            anchors[id]?.label = BLE.decodeLabel(data)
-        case BLE.fwVersionChar:
-            anchors[id]?.firmwareVersion = String(data: data, encoding: .utf8) ?? ""
-        case BLE.modeChar:
-            anchors[id]?.mode = data[0]
         case BLE.txChar:
             handleNIMessage(from: id, data: data)
-        default: break
+        default:
+            break // SEC read response (pairing) — content unused
         }
     }
 
