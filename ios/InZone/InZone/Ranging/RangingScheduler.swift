@@ -1,18 +1,22 @@
 import Foundation
 import os
 
+/// Drives Nearby Interaction ranging across all connected anchors.
+///
+/// Each anchor gets its own NISession, and they all run **concurrently** and
+/// stay running — iOS time-multiplexes the UWB channel across the sessions
+/// itself. (An earlier round-robin design that started one session, ranged
+/// for ~400 ms, then stopped it and moved on did not work with the stock
+/// Qorvo QANI firmware: a session needs to stay up to keep ranging, so only
+/// the currently-active anchor ever updated.)
 class RangingScheduler: ObservableObject {
     @Published var isRunning = false
     @Published var currentDistances: [UInt8: Float] = [:]
     @Published var currentDirections: [UInt8: SIMD3<Float>] = [:]
-    @Published var sweepCount: Int = 0
-
-    var dwellTime: TimeInterval = 0.4
-    let maxConcurrent = 2
+    @Published var sweepCount: Int = 0   // total range updates received (debug)
 
     private var activeSessions: [UUID: NISessionManager] = [:]
-    private var dwellTimers: [UUID: Timer] = [:]
-    private var anchorQueue: [UUID] = []
+    private var starting: Set<UUID> = []         // initialize sent, session not yet up
     private var connectedAnchors: Set<UUID> = []
     private var filters: [UInt8: DistanceFilter] = [:]
     private weak var bleManager: BLEManager?
@@ -22,13 +26,15 @@ class RangingScheduler: ObservableObject {
         guard !isRunning else { return }
         self.bleManager = bleManager
         connectedAnchors = Set(anchors)
-        anchorQueue = anchors
         isRunning = true
         filters.removeAll()
 
         setupCallbacks(bleManager)
-        fillSlots()
-        log.info("Ranging started with \(anchors.count) anchors")
+        // Bring up a concurrent ranging session with every connected anchor.
+        for id in anchors {
+            startAnchor(id)
+        }
+        log.info("Ranging started with \(anchors.count) anchors (concurrent)")
     }
 
     func stop() {
@@ -39,11 +45,9 @@ class RangingScheduler: ObservableObject {
             session.stop()
             bleManager?.sendStop(to: id)
         }
-        for (_, timer) in dwellTimers { timer.invalidate() }
-
         activeSessions.removeAll()
-        dwellTimers.removeAll()
-        anchorQueue.removeAll()
+        starting.removeAll()
+        connectedAnchors.removeAll()
         teardownCallbacks()
         log.info("Ranging stopped")
     }
@@ -55,7 +59,7 @@ class RangingScheduler: ObservableObject {
             self?.handleAccessoryConfig(from: id, data: data)
         }
         ble.onUwbDidStart = { [weak self] id in
-            self?.handleUwbStarted(id)
+            self?.log.info("UWB ranging active on \(id)")
         }
         ble.onUwbDidStop = { _ in }
         ble.onDisconnect = { [weak self] id in
@@ -70,16 +74,19 @@ class RangingScheduler: ObservableObject {
         bleManager?.onDisconnect = nil
     }
 
-    private func fillSlots() {
-        while activeSessions.count < maxConcurrent, !anchorQueue.isEmpty {
-            let id = anchorQueue.removeFirst()
-            guard connectedAnchors.contains(id) else { continue }
-            log.info("Initiating NI handshake with \(id)")
-            bleManager?.sendInitialize(to: id)
-        }
+    /// Kick off the NI handshake with one anchor (idempotent).
+    private func startAnchor(_ id: UUID) {
+        guard connectedAnchors.contains(id),
+              activeSessions[id] == nil,
+              !starting.contains(id) else { return }
+        starting.insert(id)
+        log.info("Initiating NI handshake with \(id)")
+        bleManager?.sendInitialize(to: id)
     }
 
     private func handleAccessoryConfig(from anchorId: UUID, data: Data) {
+        starting.remove(anchorId)
+
         let session = NISessionManager(anchorPeripheralId: anchorId)
         activeSessions[anchorId] = session
 
@@ -96,13 +103,6 @@ class RangingScheduler: ObservableObject {
         session.start(accessoryConfigData: data)
     }
 
-    private func handleUwbStarted(_ anchorId: UUID) {
-        let timer = Timer.scheduledTimer(withTimeInterval: dwellTime, repeats: false) { [weak self] _ in
-            self?.dwellComplete(anchorId)
-        }
-        dwellTimers[anchorId] = timer
-    }
-
     private func handleRange(anchorId: UUID, distance: Float, direction: SIMD3<Float>?) {
         guard let ble = bleManager,
               let anchor = ble.anchors[anchorId],
@@ -117,36 +117,24 @@ class RangingScheduler: ObservableObject {
         if let dir = direction {
             currentDirections[aid] = dir
         }
+        sweepCount += 1
 
         ble.anchors[anchorId]?.distance = filtered
         ble.anchors[anchorId]?.direction = direction
         ble.anchors[anchorId]?.lastUpdate = Date()
     }
 
-    private func dwellComplete(_ anchorId: UUID) {
-        guard isRunning else { return }
-
-        activeSessions[anchorId]?.stop()
-        activeSessions[anchorId] = nil
-        dwellTimers[anchorId]?.invalidate()
-        dwellTimers[anchorId] = nil
-        bleManager?.sendStop(to: anchorId)
-
-        if connectedAnchors.contains(anchorId) {
-            anchorQueue.append(anchorId)
-        }
-        sweepCount += 1
-        fillSlots()
-    }
-
+    /// A session ended (invalidated). Retry it shortly if the anchor is still
+    /// connected and we're still ranging.
     private func handleSessionEnded(_ anchorId: UUID) {
         activeSessions[anchorId] = nil
-        dwellTimers[anchorId]?.invalidate()
-        dwellTimers[anchorId] = nil
+        starting.remove(anchorId)
+        bleManager?.sendStop(to: anchorId)
 
-        if isRunning, connectedAnchors.contains(anchorId) {
-            anchorQueue.append(anchorId)
-            fillSlots()
+        guard isRunning, connectedAnchors.contains(anchorId) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, self.isRunning else { return }
+            self.startAnchor(anchorId)
         }
     }
 
@@ -154,10 +142,13 @@ class RangingScheduler: ObservableObject {
         connectedAnchors.remove(anchorId)
         activeSessions[anchorId]?.stop()
         activeSessions[anchorId] = nil
-        dwellTimers[anchorId]?.invalidate()
-        dwellTimers[anchorId] = nil
-        anchorQueue.removeAll { $0 == anchorId }
-        currentDistances.removeAll()
+        starting.remove(anchorId)
+
+        // Drop only this anchor's distance, not everyone's.
+        if let aid = bleManager?.anchors[anchorId]?.anchorId {
+            currentDistances[aid] = nil
+            currentDirections[aid] = nil
+        }
 
         if connectedAnchors.isEmpty {
             stop()
