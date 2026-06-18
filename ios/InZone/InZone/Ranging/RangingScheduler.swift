@@ -15,10 +15,18 @@ class RangingScheduler: ObservableObject {
     @Published var currentDirections: [UInt8: SIMD3<Float>] = [:]
     @Published var sweepCount: Int = 0   // total range updates received (debug)
 
+    /// Restart an anchor's session if it produces no range update for this long.
+    /// Concurrent QANI sessions tend to drift/stall over time without firing an
+    /// NISession invalidation; re-handshaking the stalled one recovers it (this
+    /// is what a manual Stop→Start does, automated per-anchor).
+    var stallTimeout: TimeInterval = 3.0
+
     private var activeSessions: [UUID: NISessionManager] = [:]
     private var starting: Set<UUID> = []         // initialize sent, session not yet up
     private var connectedAnchors: Set<UUID> = []
     private var filters: [UInt8: DistanceFilter] = [:]
+    private var lastRange: [UUID: Date] = [:]    // last activity per anchor (for stall watchdog)
+    private var watchdog: Timer?
     private weak var bleManager: BLEManager?
     private let log = Logger(subsystem: "com.inzone", category: "Scheduler")
 
@@ -34,6 +42,11 @@ class RangingScheduler: ObservableObject {
         for id in anchors {
             startAnchor(id)
         }
+
+        watchdog?.invalidate()
+        watchdog = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.checkStalls()
+        }
         log.info("Ranging started with \(anchors.count) anchors (concurrent)")
     }
 
@@ -41,6 +54,8 @@ class RangingScheduler: ObservableObject {
         guard isRunning else { return }
         isRunning = false
 
+        watchdog?.invalidate()
+        watchdog = nil
         for (id, session) in activeSessions {
             session.stop()
             bleManager?.sendStop(to: id)
@@ -48,6 +63,7 @@ class RangingScheduler: ObservableObject {
         activeSessions.removeAll()
         starting.removeAll()
         connectedAnchors.removeAll()
+        lastRange.removeAll()
         teardownCallbacks()
         log.info("Ranging stopped")
     }
@@ -80,8 +96,35 @@ class RangingScheduler: ObservableObject {
               activeSessions[id] == nil,
               !starting.contains(id) else { return }
         starting.insert(id)
+        lastRange[id] = Date() // grace period for the handshake to complete
         log.info("Initiating NI handshake with \(id)")
         bleManager?.sendInitialize(to: id)
+    }
+
+    /// Restart any anchor that hasn't produced a range update within stallTimeout.
+    private func checkStalls() {
+        guard isRunning else { return }
+        let now = Date()
+        for id in connectedAnchors {
+            let last = lastRange[id] ?? now
+            if now.timeIntervalSince(last) > stallTimeout {
+                log.info("Anchor \(id) stalled — restarting session")
+                restartAnchor(id)
+            }
+        }
+    }
+
+    private func restartAnchor(_ id: UUID) {
+        activeSessions[id]?.stop()
+        activeSessions[id] = nil
+        starting.remove(id)
+        bleManager?.sendStop(to: id)
+        lastRange[id] = Date() // grace while it re-handshakes
+        // Let the accessory tear its session down before re-initializing.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self, self.isRunning else { return }
+            self.startAnchor(id)
+        }
     }
 
     private func handleAccessoryConfig(from anchorId: UUID, data: Data) {
@@ -104,6 +147,8 @@ class RangingScheduler: ObservableObject {
     }
 
     private func handleRange(anchorId: UUID, distance: Float, direction: SIMD3<Float>?) {
+        lastRange[anchorId] = Date()
+
         guard let ble = bleManager,
               let anchor = ble.anchors[anchorId],
               anchor.anchorId != 0xFF else { return }
