@@ -82,23 +82,24 @@ app; internal testing needs no App Review.
 
 One-time setup:
 1. Join the Apple Developer Program ($99/yr).
-2. App Store Connect → create the app record with bundle id `com.inzone.app`.
+2. App Store Connect → create the app record with bundle id `com.inzoned.app`.
 3. App Store Connect → Users and Access → Integrations → App Store Connect API →
    generate a key (Developer/App Manager access). Download the `.p8` **once**;
-   note its **Key ID** and the **Issuer ID**.
+   note its **Key ID** and the **Issuer ID**. (Used only to authenticate the
+   upload.)
 4. Find your **Team ID** (10 chars) on the Membership page.
-5. Repo → Settings → Secrets and variables → Actions → add:
-   - `ASC_KEY_ID` — the key id
-   - `ASC_ISSUER_ID` — the issuer id
-   - `ASC_KEY_P8` — the full contents of the `.p8` file (paste as-is)
-   - `APPLE_TEAM_ID` — the team id
+5. Create a **fixed Apple Distribution certificate + App Store provisioning
+   profile** and add the signing secrets — see
+   [docs/ios-testflight-signing.md](../docs/ios-testflight-signing.md) (no Mac
+   needed). Then add the upload secrets too: `ASC_KEY_ID`, `ASC_ISSUER_ID`,
+   `ASC_KEY_P8`, `APPLE_TEAM_ID`.
 6. Actions tab → **iOS TestFlight** → **Run workflow**. The build number is set
    from the run number automatically, so each run is uploadable.
 7. After App Store Connect finishes processing (~5–30 min), open the TestFlight
    app on the iPhone (add yourself as an internal tester) and install. Builds
    last 90 days.
 
-Signing is automatic via the API key (`xcodebuild -allowProvisioningUpdates`),
-which also registers the Nearby Interaction capability on the App ID from the
-app's entitlement — so there are no certificates or provisioning profiles to
-manage by hand.
+The workflow signs **manually** with that one certificate/profile — *not*
+`-allowProvisioningUpdates`/automatic, which regenerates a distribution
+certificate on every run and exhausts Apple's limit (causing
+"No profiles for 'com.inzoned.app' were found"). One cert, reused every build.
