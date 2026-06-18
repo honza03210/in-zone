@@ -41,8 +41,56 @@ SRC_FILES += \
 ifeq ($(UWB_BACKEND),qani)
   # ---- our application sources ----
   SRC_FILES += \
-    $(PROJ_DIR)/src/uwb/uwb_port_qani.c \
-    $(PROJ_DIR)/src/uwb/qosal_shim.c
+    $(PROJ_DIR)/src/uwb/uwb_port_qani.c
+
+  # ---- FreeRTOS kernel + Nordic nRF52 RTC port (SoftDevice coexistence) ----
+  # Replaces the bare-metal main loop + qosal_shim.c. RTC1 = FreeRTOS tick
+  # (RTC0 = SoftDevice, RTC2 = uwb-stack). app_timer_freertos reimplements the
+  # app_timer API over FreeRTOS software timers, so leds/cli/watchdog are
+  # unchanged. heap_4 (free + coalescing) backs QOSAL's qmalloc / pvPortMalloc.
+  CFLAGS   += -DFREERTOS -DINZONE_FREERTOS
+  ASMFLAGS += -DFREERTOS
+  # SoftDevice events fetched by the nrf_sdh_freertos task (sdk_config.h is
+  # git-ignored, so pin the dispatch model here for reproducibility).
+  CFLAGS   += -DNRF_SDH_DISPATCH_MODEL=2
+  SRC_FILES += \
+    $(SDK_ROOT)/external/freertos/source/croutine.c \
+    $(SDK_ROOT)/external/freertos/source/event_groups.c \
+    $(SDK_ROOT)/external/freertos/source/list.c \
+    $(SDK_ROOT)/external/freertos/source/queue.c \
+    $(SDK_ROOT)/external/freertos/source/stream_buffer.c \
+    $(SDK_ROOT)/external/freertos/source/tasks.c \
+    $(SDK_ROOT)/external/freertos/source/timers.c \
+    $(SDK_ROOT)/external/freertos/source/portable/MemMang/heap_4.c \
+    $(SDK_ROOT)/external/freertos/portable/GCC/nrf52/port.c \
+    $(SDK_ROOT)/external/freertos/portable/CMSIS/nrf52/port_cmsis.c \
+    $(SDK_ROOT)/external/freertos/portable/CMSIS/nrf52/port_cmsis_systick.c \
+    $(SDK_ROOT)/components/softdevice/common/nrf_sdh_freertos.c \
+    $(SDK_ROOT)/components/libraries/timer/app_timer_freertos.c
+
+  # ---- QOSAL FreeRTOS implementation (replaces bare-metal qosal_shim.c) ----
+  # Public qmalloc()/quota live in the OS-agnostic src/qmalloc.c (wrapped to
+  # avoid an object-name clash with src/freertos/qmalloc.c, which provides the
+  # pvPortMalloc backend). See qosal_qmalloc_common_wrap.c.
+  SRC_FILES += \
+    $(PROJ_DIR)/src/uwb/qosal_qmalloc_common_wrap.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/qerr_common.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qerr.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qirq.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qmalloc.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qmsg_queue.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qmutex.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qos.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qpm.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qprivate.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qprofiling.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qrand.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qsemaphore.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qsignal.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qthread.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qtime.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qtracing.c \
+    $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos/qworkqueue.c
 
   # ---- Qorvo fira init (fira_uwb_mcps_init) ----
   SRC_FILES += $(QANI_ROOT)/Src/Apps/Src/fira/fira_dw3000.c
@@ -97,7 +145,8 @@ ifeq ($(UWB_BACKEND),qani)
     $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_timer.c \
     $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_rtc.c \
     $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_nvmc.c \
-    $(SDK_ROOT)/modules/nrfx/drivers/src/prs/nrfx_prs.c
+    $(SDK_ROOT)/modules/nrfx/drivers/src/prs/nrfx_prs.c \
+    $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_systick.c
 
   # ---- niq library (Apple NI accessory protocol) ----
   INC_FOLDERS += $(QANI_ROOT)/Libs/niq/Inc
@@ -116,6 +165,19 @@ ifeq ($(UWB_BACKEND),qani)
   # ---- QOSAL headers (qerr.h, qthread.h, qlog.h, etc.) ----
   INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/include
   INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/include/dummy
+  # qosal/src must precede qosal/src/freertos so the qmalloc wrapper's
+  # `#include "qmalloc.c"` resolves to the common (public) qmalloc.c, and
+  # qosal/src/freertos provides qprivate.h.
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src
+  INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qosal/src/freertos
+
+  # ---- FreeRTOS kernel + Nordic nRF52 port ----
+  # NB: do NOT add external/freertos/config — its FreeRTOSConfig.h would shadow
+  # ours (config/ is added later, so the SDK copy would win and lacks
+  # configSUPPORT_STATIC_ALLOCATION). Our config/FreeRTOSConfig.h is authoritative.
+  INC_FOLDERS += $(SDK_ROOT)/external/freertos/source/include
+  INC_FOLDERS += $(SDK_ROOT)/external/freertos/portable/GCC/nrf52
+  INC_FOLDERS += $(SDK_ROOT)/external/freertos/portable/CMSIS/nrf52
 
   # ---- qplatform headers ----
   INC_FOLDERS += $(QANI_ROOT)/Libs/uwb-stack/libs/qplatform/include
@@ -191,6 +253,9 @@ ifeq ($(UWB_BACKEND),qani)
   CFLAGS += -DNRFX_SYSTICK_ENABLED=1
 else
   SRC_FILES += $(PROJ_DIR)/src/uwb/uwb_port_stub.c
+  # Stub build stays bare-metal: regular app_timer (RTC1). The qani build uses
+  # app_timer_freertos instead (RTC1 belongs to the FreeRTOS tick there).
+  SRC_FILES += $(SDK_ROOT)/components/libraries/timer/app_timer.c
 endif
 
 # ---- nRF5 SDK sources ----
@@ -206,7 +271,6 @@ SRC_FILES += \
   $(SDK_ROOT)/components/softdevice/common/nrf_sdh.c \
   $(SDK_ROOT)/components/softdevice/common/nrf_sdh_ble.c \
   $(SDK_ROOT)/components/softdevice/common/nrf_sdh_soc.c \
-  $(SDK_ROOT)/components/libraries/timer/app_timer.c \
   $(SDK_ROOT)/components/libraries/util/app_error.c \
   $(SDK_ROOT)/components/libraries/util/app_error_handler_gcc.c \
   $(SDK_ROOT)/components/libraries/util/app_error_weak.c \

@@ -23,6 +23,10 @@
 #include "common_fira.h"
 #include "llhw.h"
 
+#include "qsignal.h"
+#include "qthread.h"
+#include "qtime.h" /* QOSAL_WAIT_FOREVER */
+
 #include "nrf_soc.h"
 
 #include <string.h>
@@ -403,24 +407,54 @@ static void fira_session_stop(void)
     NRF_LOG_INFO("uwb: ranging stopped");
 }
 
-/* ---- niq_init callbacks ---- */
+/* ---- niq_init callbacks + UWB worker task ----
+ * MAC session start/stop are blocking, RTOS-aware operations (they wait on
+ * internal qsignals while the MAC task does the work), so they must run in a
+ * task — not in the niq callback's caller context (the SoftDevice/BLE task).
+ * The niq callbacks just raise a signal; uwb_task does the work. This mirrors
+ * Qorvo's QANI qani_task and is the whole point of the FreeRTOS port: the old
+ * bare-metal port ran the start synchronously and tripped a SoftDevice assert
+ * inside uwbmac_start. */
 
-static volatile bool m_start_pending;
-static volatile bool m_stop_pending;
+static struct qsignal *m_uwb_signal;
+static struct qthread *m_uwb_thread;
+#define UWB_TASK_STACK_SIZE 4096
+static uint8_t m_uwb_task_stack[UWB_TASK_STACK_SIZE];
 
 static void on_niq_start_uwb(fira_device_configure_t *config, void *user_ctx)
 {
     (void)user_ctx;
     NRF_LOG_INFO("uwb: niq requests start (session %u, ch %u)",
                  config->Session_ID, config->Channel_Number);
-    m_start_pending = true;
+    qsignal_raise(m_uwb_signal, 1);
 }
 
 static void on_niq_stop_uwb(uint32_t session_id, void *user_ctx)
 {
     (void)user_ctx;
     NRF_LOG_INFO("uwb: niq requests stop (session %u)", session_id);
-    m_stop_pending = true;
+    qsignal_raise(m_uwb_signal, 0);
+}
+
+static void uwb_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        int is_start = 0;
+        if (qsignal_wait(m_uwb_signal, &is_start, QOSAL_WAIT_FOREVER) != QERR_SUCCESS) {
+            continue;
+        }
+        if (is_start) {
+            if (fira_session_start() == 0) {
+                if (m_cb) m_cb(UWB_PORT_EVT_STARTED);
+            } else {
+                if (m_cb) m_cb(UWB_PORT_EVT_ERROR);
+            }
+        } else {
+            fira_session_stop();
+            if (m_cb) m_cb(UWB_PORT_EVT_STOPPED);
+        }
+    }
 }
 
 /* ---- public API ---- */
@@ -447,6 +481,20 @@ int uwb_port_init(uwb_port_evt_cb_t cb)
     if (ret != 0) {
         NRF_LOG_ERROR("uwb: niq_init failed (%d)", ret);
         return ret;
+    }
+
+    /* Worker task that performs session start/stop off the niq callback. */
+    m_uwb_signal = qsignal_init();
+    if (!m_uwb_signal) {
+        NRF_LOG_ERROR("uwb: qsignal_init failed");
+        return -1;
+    }
+    m_uwb_thread = qthread_create(uwb_task, NULL, "uwb",
+                                  m_uwb_task_stack, sizeof(m_uwb_task_stack),
+                                  QTHREAD_PRIORITY_NORMAL);
+    if (!m_uwb_thread) {
+        NRF_LOG_ERROR("uwb: uwb_task create failed");
+        return -1;
     }
 
     NRF_LOG_INFO("uwb: QANI backend initialised (niq v2.1, uwbmac ready)");
@@ -508,51 +556,13 @@ int uwb_port_stop(void)
     return ret;
 }
 
-/* Defined in qosal_shim.c — drains deferred MAC work in thread context. */
-extern bool qworkqueue_run_pending(void);
-
+/* Under FreeRTOS the MAC runs in its own task(s) (created by uwbmac_init) and
+ * session start/stop is driven by qsignal from the niq callbacks (uwb_task).
+ * There is nothing for the application to poll. Kept for the uwb_port.h API
+ * (the bare-metal stub backend still has a real poll loop). */
 bool uwb_port_poll(void)
 {
-    bool did_work = false;
-
-    /* Run any MAC work the stack deferred (replaces the old inline execution
-     * inside qworkqueue_schedule_work). Must run every iteration so ranging
-     * rounds and event processing make progress. */
-    if (qworkqueue_run_pending()) {
-        did_work = true;
-    }
-
-    if (m_start_pending) {
-        m_start_pending = false;
-        did_work = true;
-        if (fira_session_start() == 0) {
-            if (m_cb) m_cb(UWB_PORT_EVT_STARTED);
-        } else {
-            if (m_cb) m_cb(UWB_PORT_EVT_ERROR);
-        }
-    }
-
-    if (m_stop_pending) {
-        m_stop_pending = false;
-        did_work = true;
-        fira_session_stop();
-        if (m_cb) m_cb(UWB_PORT_EVT_STOPPED);
-    }
-
-    /* Process pending uwbmac events (IRQ-driven ranging rounds). */
-    if (m_ranging_active && m_uwbmac_ctx) {
-        static bool first_poll = true;
-        if (first_poll) {
-            first_poll = false;
-            STEP("first uwbmac_poll_events after ranging start");
-        }
-        enum qerr r = uwbmac_poll_events(m_uwbmac_ctx, 0);
-        if (r == QERR_SUCCESS) {
-            did_work = true;
-        }
-    }
-
-    return did_work;
+    return false;
 }
 
 const uwb_port_range_t *uwb_port_last_range(void)
