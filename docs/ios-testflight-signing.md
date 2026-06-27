@@ -23,11 +23,14 @@ few, so revoke them to make room:
 
 ```bash
 openssl genrsa -out dist.key 2048
-openssl req -new -key dist.key -out dist.csr \
+MSYS_NO_PATHCONV=1 openssl req -new -key dist.key -out dist.csr \
   -subj "/CN=InZone Distribution/O=InZone/C=US"
 ```
 
-Keep `dist.key` safe — it's the private half of your certificate.
+`MSYS_NO_PATHCONV=1` is required in Git Bash — without it, Git Bash rewrites the
+leading `/` in `-subj` into a Windows path and openssl errors with
+"subject name is expected to be in the format ...". Keep `dist.key` safe — it's
+the private half of your certificate.
 
 ## 2. Get the distribution certificate from Apple
 
